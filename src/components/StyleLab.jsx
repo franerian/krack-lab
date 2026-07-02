@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react'
-import { analyzeImageStyle, critiqueStyleDNA, isReady, providerHint } from '../lib/anthropic.js'
+import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, isReady, providerHint } from '../lib/anthropic.js'
+import { clipSimilarity } from '../lib/clip.js'
 import { fileToImage } from '../lib/image.js'
 import { measureImage, extractFileMetadata, measurementsToText } from '../lib/imageAnalysis.js'
 import { florenceGrounding, groundingToText } from '../lib/florence.js'
@@ -20,6 +21,15 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   const [meta, setMeta] = useState(null)
   const [drag, setDrag] = useState(false)
   const fileRef = useRef(null)
+  // Loop fotocopiadora
+  const [genImg, setGenImg] = useState(null)
+  const [genMetrics, setGenMetrics] = useState(null)
+  const [clipScore, setClipScore] = useState(null)
+  const [scoring, setScoring] = useState(false)
+  const [refining, setRefining] = useState(false)
+  const [version, setVersion] = useState(1)
+  const [history, setHistory] = useState([])
+  const genRef = useRef(null)
 
   const loadFile = async (file) => {
     try {
@@ -27,6 +37,10 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
       setImg(loaded)
       setResult(null)
       setGrounding(null)
+      setGenImg(null)
+      setClipScore(null)
+      setVersion(1)
+      setHistory([])
       // Mediciones objetivas: paleta, contraste, saturación, AR + metadata
       // embebida (EXIF / prompt de generadores IA). Instantáneo, sin IA.
       setMetrics(await measureImage(loaded.dataUrl).catch(() => null))
@@ -78,6 +92,68 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   }
 
   const toObj = () => Object.fromEntries(result.map((s) => [s.name, s.text]))
+
+  // ── Loop fotocopiadora ──
+  const loadGenFile = async (file) => {
+    try {
+      const loaded = await fileToImage(file)
+      setGenImg(loaded)
+      setClipScore(null)
+      setScoring(true)
+      const [gm, score] = await Promise.all([
+        measureImage(loaded.dataUrl).catch(() => null),
+        clipSimilarity(img.dataUrl, loaded.dataUrl).catch(() => null),
+      ])
+      setGenMetrics(gm)
+      setClipScore(score)
+      if (score != null) setHistory((prev) => [...prev, { v: version, score }])
+      setScoring(false)
+    } catch {
+      setScoring(false)
+      toast('Ese archivo no es una imagen válida', 'error')
+    }
+  }
+
+  const comparisonText = () => {
+    const lines = ['OBJECTIVE COMPARISON DATA (measured programmatically — facts):']
+    if (clipScore != null) lines.push(`- CLIP visual similarity between original and generation: ${clipScore}/100`)
+    if (metrics && genMetrics) {
+      lines.push(
+        `- ORIGINAL: contrast ${metrics.contrast10}/10, saturation ${metrics.saturation10}/10, ${metrics.key}, palette ${metrics.palette.slice(0, 4).map((c) => c.hex).join(' ')}`,
+        `- GENERATION: contrast ${genMetrics.contrast10}/10, saturation ${genMetrics.saturation10}/10, ${genMetrics.key}, palette ${genMetrics.palette.slice(0, 4).map((c) => c.hex).join(' ')}`,
+      )
+      const dc = genMetrics.contrast10 - metrics.contrast10
+      const ds = genMetrics.saturation10 - metrics.saturation10
+      if (dc || ds) {
+        lines.push(`- Drift to compensate: ${[
+          dc && `generation contrast is ${dc > 0 ? 'higher' : 'lower'} by ${Math.abs(dc)} points`,
+          ds && `generation saturation is ${ds > 0 ? 'higher' : 'lower'} by ${Math.abs(ds)} points`,
+        ].filter(Boolean).join('; ')}.`)
+      }
+    }
+    return lines.join('\n')
+  }
+
+  const refine = async () => {
+    if (!genImg || !result) return
+    if (!isReady(settings)) return toast(providerHint(settings), 'error')
+    setRefining(true)
+    try {
+      const corrected = await refineFromComparison({
+        settings, original: img, generated: genImg, draft: result, mode,
+        comparisonData: comparisonText(),
+      })
+      setResult(corrected)
+      setVersion((v) => v + 1)
+      setGenImg(null)
+      setClipScore(null)
+      toast(`Prompt corregido → v${version + 1}. Generá de nuevo y traé el resultado.`, 'ok')
+    } catch (e) {
+      toast('Error al refinar: ' + e.message, 'error')
+    } finally {
+      setRefining(false)
+    }
+  }
 
   const currentTarget = TARGETS.find((t) => t.id === target) || TARGETS[0]
 
@@ -177,6 +253,55 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
               <div className="grounding-info" title={groundingToText(grounding)}>
                 🔎 Florence-2: {grounding.regionCount} regiones inventariadas
                 {grounding.ocr ? ' · texto detectado' : ''} — «{grounding.caption.slice(0, 90)}…»
+              </div>
+            )}
+            {result && (
+              <div className="loop-panel">
+                <div className="metrics-title">📠 Loop de fidelidad · prompt v{version}</div>
+                <div
+                  className="loop-drop"
+                  onClick={() => genRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); loadGenFile(e.dataTransfer.files[0]) }}
+                  title="Generá una imagen con este prompt en tu plataforma y traela acá para medir la fidelidad"
+                >
+                  {genImg
+                    ? <img src={genImg.dataUrl} alt="generación" />
+                    : <span>Arrastrá acá la imagen<br />generada con el prompt v{version}</span>}
+                </div>
+                {scoring && <p className="hint"><span className="spinner" />Midiendo similitud (CLIP)…</p>}
+                {clipScore != null && (
+                  <div className="clip-score">
+                    <span className={'score-badge ' + (clipScore >= 90 ? 'good' : clipScore >= 75 ? 'mid' : 'bad')}>
+                      {clipScore}/100
+                    </span>
+                    similitud CLIP
+                    {genMetrics && metrics && (
+                      <span className="hint" style={{ marginLeft: 4 }}>
+                        · Δcontraste {genMetrics.contrast10 - metrics.contrast10 >= 0 ? '+' : ''}{genMetrics.contrast10 - metrics.contrast10}
+                        · Δsat {genMetrics.saturation10 - metrics.saturation10 >= 0 ? '+' : ''}{genMetrics.saturation10 - metrics.saturation10}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {history.length > 0 && (
+                  <div className="score-history">
+                    {history.map((h, i) => (
+                      <span key={i} className="metric-badge">v{h.v}: {h.score}</span>
+                    ))}
+                    {history.length >= 2 && (
+                      <span className="hint">
+                        {history[history.length - 1].score > history[0].score ? '↑ convergiendo' : ''}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {genImg && !scoring && (
+                  <button className="btn" style={{ width: '100%' }} onClick={refine} disabled={refining}>
+                    {refining ? <span className="spinner" /> : '📠 '}Corregir prompt → v{version + 1}
+                  </button>
+                )}
+                <input ref={genRef} type="file" accept="image/*" hidden onChange={(e) => loadGenFile(e.target.files[0])} />
               </div>
             )}
             <p className="hint">

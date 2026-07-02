@@ -10,11 +10,15 @@ export const MODELS = [
   { id: 'claude-opus-4-8', label: 'Claude Opus 4.8 (máxima calidad)' },
 ]
 
-export async function callClaude({ apiKey, model, system, user, maxTokens = 2000, image }) {
+export async function callClaude({ apiKey, model, system, user, maxTokens = 2000, image, images }) {
   if (!apiKey) throw new Error('NO_API_KEY')
-  const content = image
+  const imgs = images || (image ? [image] : null)
+  const content = imgs
     ? [
-        { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.base64 } },
+        ...imgs.map((im) => ({
+          type: 'image',
+          source: { type: 'base64', media_type: im.mediaType, data: im.base64 },
+        })),
         { type: 'text', text: user },
       ]
     : user
@@ -41,11 +45,12 @@ export async function callClaude({ apiKey, model, system, user, maxTokens = 2000
   return data.content?.map((b) => b.text || '').join('') || ''
 }
 
-export async function callOllama({ url, model, system, user, maxTokens = 2000, image }) {
+export async function callOllama({ url, model, system, user, maxTokens = 2000, image, images }) {
   if (!model) throw new Error('NO_OLLAMA_MODEL')
   const base = (url || OLLAMA_DEFAULT_URL).replace(/\/$/, '')
   const userMsg = { role: 'user', content: user }
-  if (image) userMsg.images = [image.base64]
+  const imgs = images || (image ? [image] : null)
+  if (imgs) userMsg.images = imgs.map((im) => im.base64)
   const res = await fetch(`${base}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -76,14 +81,14 @@ export async function listOllamaModels(url) {
 }
 
 // Despachador según el proveedor elegido en Ajustes.
-export function callLLM(settings, { system, user, maxTokens, image }) {
+export function callLLM(settings, { system, user, maxTokens, image, images }) {
   if (settings.provider === 'ollama') {
     return callOllama({
-      url: settings.ollamaUrl, model: settings.ollamaModel, system, user, maxTokens, image,
+      url: settings.ollamaUrl, model: settings.ollamaModel, system, user, maxTokens, image, images,
     })
   }
   return callClaude({
-    apiKey: settings.apiKey, model: settings.model, system, user, maxTokens, image,
+    apiKey: settings.apiKey, model: settings.model, system, user, maxTokens, image, images,
   })
 }
 
@@ -265,6 +270,28 @@ export async function analyzeImageStyle({ settings, image, mode = 'style', measu
 
 // Pasada de autocrítica: compara el borrador contra la imagen y las
 // mediciones, corrige omisiones, exageraciones y contradicciones.
+// Loop fotocopiadora: compara la generación contra el original y corrige
+// el prompt para que la próxima iteración converja. El original es siempre
+// el objetivo; nunca se persiguen los artefactos de la generación.
+export async function refineFromComparison({ settings, original, generated, draft, mode = 'style', comparisonData = '' }) {
+  const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
+  const out = await callLLM(settings, {
+    system: DNA_SYSTEM(mode) + `
+
+PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference — the absolute target. The SECOND is an AI GENERATION produced from the CURRENT PROMPT. You are the error-correction system of a photocopier: you do not judge beauty, you measure drift and correct it.
+1. Silently diff the generation against the original: what did it LOSE (elements, texture, light behavior), what did it ADD that isn't in the original, what did it EXAGGERATE or UNDERSHOOT (contrast, saturation, mood intensity, scale)?
+2. If OBJECTIVE COMPARISON DATA is provided, treat it as measured fact and compensate explicitly (e.g. generation more saturated than original → lower the saturation wording).
+3. Output the CORRECTED full prompt in the exact same section format — nothing else. Strengthen constraints where the generation drifted, add what it lost, remove or soften what it over-produced. Never describe the generation; describe what the NEXT generation must do to match the ORIGINAL.`,
+    user: `CURRENT PROMPT (the one that produced the second image):\n${draftText}${comparisonData ? `\n\n${comparisonData}` : ''}\n\nFirst image = ORIGINAL reference (target). Second image = generation to correct. Output the corrected prompt.`,
+    maxTokens: 1600,
+    images: [original, generated],
+  })
+  const parsed = textToSections(out)
+  if (!parsed.length) throw new Error('PARSE_ERROR')
+  const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
+  return parsed.filter((s) => !banned.includes(s.name))
+}
+
 export async function critiqueStyleDNA({ settings, image, draft, mode = 'style', measurements = '' }) {
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
   const out = await callLLM(settings, {

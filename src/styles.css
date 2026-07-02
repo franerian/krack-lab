@@ -440,6 +440,28 @@ mark.preset-mark span { background: transparent; }
   background: var(--bg);
 }
 
+/* ───────── Loop fotocopiadora ───────── */
+.loop-panel {
+  border: 1px solid var(--border); border-radius: 9px; background: var(--bg);
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+}
+.loop-drop {
+  aspect-ratio: 16 / 7; border: 1.5px dashed var(--border-strong); border-radius: 8px;
+  display: grid; place-items: center; text-align: center; color: var(--text-faint);
+  font-size: 11.5px; line-height: 1.5; cursor: pointer; overflow: hidden;
+}
+.loop-drop:hover { border-color: var(--accent); color: var(--accent-soft); }
+.loop-drop img { width: 100%; height: 100%; object-fit: contain; }
+.clip-score { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-dim); flex-wrap: wrap; }
+.score-badge {
+  font: 700 13px var(--font-mono); padding: 3px 9px; border-radius: 6px;
+  border: 1px solid;
+}
+.score-badge.good { color: #86efac; border-color: #14532d; }
+.score-badge.mid { color: #fdba74; border-color: #7c2d12; }
+.score-badge.bad { color: #fca5a5; border-color: #7f1d1d; }
+.score-history { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+
 /* ───────── Character Studio foto ───────── */
 .cs-photo {
   width: 40px; height: 40px; flex: none; border-radius: 8px; cursor: pointer;

@@ -42,6 +42,18 @@ npm run build    # bundle de producción en dist/
   **Réplica completa**. El resultado se aplica al prompt, lo reemplaza o se
   guarda como preset de estilo reutilizable. Desde el mismo Lab se puede
   copiar el ADN compilado para cualquier plataforma (selector de destino + AR).
+  El pipeline de fidelidad completo:
+  1. *Mediciones por código* (instantáneas): paleta hex real por k-means,
+     contraste/saturación/brillo en escalas 1-10, AR; EXIF de cámara y
+     detección del prompt original embebido en PNGs de A1111/ComfyUI.
+  2. *Análisis profundo* (opcional): Florence-2 corriendo en el navegador
+     (Transformers.js + WebGPU, ~230 MB cacheados) — caption denso,
+     inventario por grilla de tercios y OCR como evidencia objetiva.
+  3. *Extracción* con el LLM de visión, obligado a obedecer las mediciones.
+  4. *Autocrítica* (opcional): segunda pasada anti-exageración.
+  5. *Loop de fidelidad* (📠): traés la imagen generada, CLIP (en browser)
+     mide la similitud 0-100 y los deltas medidos (Δcontraste, Δsat), y la
+     IA corrige el prompt (v2, v3…) comparando ambas imágenes hasta converger.
 - **Undo / Redo** de todas las operaciones (acciones IA, presets, plantillas).
 - **Presets aplicados marcados**: el preset usado se marca con punto naranja en
   la sidebar y la sección que lo contiene con punto en su `#`; al pasar el
