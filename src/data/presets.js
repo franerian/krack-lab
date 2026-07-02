@@ -1,0 +1,382 @@
+// Biblioteca de presets. Cada preset inserta texto en una sección del prompt
+// (kind: 'insert') o rellena varias secciones a la vez (kind: 'template').
+
+let _id = 0
+const p = (name, section, text, desc = '') => ({
+  id: `p${++_id}`, kind: 'insert', name, section, text, desc,
+})
+const t = (name, sections, desc = '') => ({
+  id: `p${++_id}`, kind: 'template', name, sections, desc,
+})
+
+export const PRESET_GROUPS = [
+  // ───────────────────────────── PHOTO STYLES ─────────────────────────────
+  {
+    id: 'photo-styles', label: 'Photo Styles', category: 'PHOTO STYLES',
+    presets: [
+      p('Cinematic Still', 'Style', 'cinematic film still, shallow depth of field, film grain, natural color grade, 2.39:1 letterbox feel'),
+      p('Editorial Fashion', 'Style', 'high-fashion editorial photography, bold styling, controlled studio lighting, crisp detail, magazine cover quality'),
+      p('Documentary', 'Style', 'documentary photography, candid and unposed, available light, honest texture, journalistic framing'),
+      p('Street Photography', 'Style', 'street photography, decisive moment, urban energy, natural imperfections, 35mm reportage look'),
+      p('Fine Art Portrait', 'Style', 'fine art portrait, painterly light, muted palette, timeless and intimate, gallery print quality'),
+      p('Product / Commercial', 'Style', 'commercial product photography, seamless backdrop, precise specular highlights, immaculate detail'),
+      p('Architectural', 'Style', 'architectural photography, corrected verticals, clean geometry, balanced exposure, large format clarity'),
+      p('Food Photography', 'Style', 'food photography, appetizing warm light, styled composition, macro texture detail, shallow focus'),
+      p('Wildlife', 'Style', 'wildlife photography, long telephoto compression, golden hour backlight, alert natural behavior'),
+      p('Sports Action', 'Style', 'sports action photography, frozen motion at peak action, fast shutter, dramatic low angle'),
+      p('Macro Detail', 'Style', 'extreme macro photography, razor-thin focus plane, intricate surface texture, controlled diffused light'),
+      p('Astro / Night Sky', 'Style', 'astrophotography, long exposure star field, Milky Way core, low horizon silhouette, clean high-ISO look'),
+      p('Underwater', 'Style', 'underwater photography, volumetric light shafts through water, suspended particles, cyan depth gradient'),
+      p('Aerial / Drone', 'Style', 'aerial drone photography, top-down abstract geometry, long shadows, expansive scale'),
+      p('Lifestyle', 'Style', 'lifestyle photography, warm natural light, authentic in-the-moment feel, soft environmental context'),
+    ],
+  },
+  // ───────────────────────────── FILM STOCKS ──────────────────────────────
+  {
+    id: 'film-stocks', label: 'Film Stocks', category: 'PHOTO STYLES',
+    presets: [
+      p('Kodak Portra 400', 'Color', 'Kodak Portra 400 film look: creamy skin tones, gentle contrast, warm neutral palette, fine grain'),
+      p('Kodak Portra 800', 'Color', 'Kodak Portra 800 film look: warm low-light tones, slightly heavier grain, rich shadow detail'),
+      p('Kodak Ektachrome', 'Color', 'Kodak Ektachrome slide film look: clean cool tones, saturated blues, crisp contrast'),
+      p('Kodachrome 64', 'Color', 'Kodachrome 64 look: rich reds, deep contrast, archival 20th-century color, punchy midtones'),
+      p('CineStill 800T', 'Color', 'CineStill 800T look: tungsten night tones, halated red glow around lights, cinematic urban night'),
+      p('Fuji Velvia 50', 'Color', 'Fujifilm Velvia 50 look: hyper-saturated landscape color, deep greens and magentas, high contrast'),
+      p('Fuji Pro 400H', 'Color', 'Fujifilm Pro 400H look: airy pastel palette, soft mint shadows, wedding-film softness'),
+      p('Ilford HP5 B&W', 'Color', 'Ilford HP5 black and white: classic gritty grain, rich mid-gray tonality, timeless reportage feel'),
+      p('Kodak Tri-X 400', 'Color', 'Kodak Tri-X 400 black and white: punchy contrast, pronounced grain, raw documentary energy'),
+      p('Polaroid SX-70', 'Color', 'Polaroid SX-70 instant film: soft dreamy focus, faded warm cast, square frame nostalgia'),
+      p('Vision3 500T', 'Color', '35mm Kodak Vision3 500T motion picture stock: soft halation, teal shadows, warm highlights, subtle grain'),
+      p('Technicolor 3-Strip', 'Color', 'vintage 3-strip Technicolor: saturated primaries, glowing skin, golden-age Hollywood richness'),
+      p('Bleach Bypass', 'Color', 'bleach bypass process: desaturated silvery tones, harsh contrast, gritty war-film texture'),
+      p('Cross-Processed', 'Color', 'cross-processed film: shifted green-yellow cast, blown highlights, lo-fi editorial edge'),
+      p('8mm Home Movie', 'Color', 'vintage 8mm home movie: heavy grain, gate weave, faded warm colors, nostalgic flicker'),
+    ],
+  },
+  // ─────────────────────────── CINEMATIC STYLES ───────────────────────────
+  {
+    id: 'cinematic-styles', label: 'Cinematic Styles', category: 'COMPOSITION',
+    presets: [
+      p('Blockbuster', 'Style', 'extremely cinematic blockbuster look: high realism, rich detail, powerful visual spectacle, anamorphic flares'),
+      p('Film Noir', 'Style', 'film noir: hard chiaroscuro light, venetian-blind shadows, cigarette haze, black and white, fatalistic mood'),
+      p('Neo-Noir', 'Style', 'neo-noir: neon-soaked night, wet asphalt reflections, deep teal shadows, moral ambiguity in color'),
+      p('Sci-Fi Epic', 'Style', 'science fiction epic: monumental scale, cold precise light, atmospheric haze, sleek production design'),
+      p('Western', 'Style', 'classic western: dusty golden light, vast horizon lines, weathered faces, heat shimmer'),
+      p('Horror', 'Style', 'horror film: oppressive darkness, sickly practical light, negative space that hides something, dread'),
+      p('A24 Indie', 'Style', 'contemporary indie A24 look: naturalistic light, muted honest color, static precise framing, quiet tension'),
+      p('Wes Anderson', 'Style', 'symmetrical whimsical style: centered composition, flat frontal framing, pastel palette, meticulous production design'),
+      p('Nolan IMAX', 'Style', 'IMAX epic style: large-format clarity, practical realism, monumental scale, desaturated steel palette'),
+      p('Villeneuve', 'Style', 'slow monumental sci-fi style: fog and silhouette, brutalist scale, minimal palette, meditative pacing'),
+      p('Fincher', 'Style', 'precise thriller style: sickly green-yellow grade, locked-off surgical camera, deep shadows, clinical dread'),
+      p('Wong Kar-wai', 'Style', 'romantic neon style: smeared motion, saturated reds and greens, rain-slick streets, longing'),
+      p('Malick Golden Hour', 'Style', 'poetic naturalism: handheld golden hour, sun through fields, whispered intimacy, wide lenses close to faces'),
+      p('Kubrick One-Point', 'Style', 'one-point perspective style: obsessive symmetry, slow push-in, cold formal grandeur'),
+      p('Michael Bay', 'Style', 'high-octane action style: low-angle hero shots, orbiting camera, teal and orange, lens flares, explosive scale'),
+    ],
+  },
+  // ─────────────────────────── COMMERCIAL STYLES ──────────────────────────
+  {
+    id: 'commercial-styles', label: 'Commercial Styles', category: 'COMPOSITION',
+    presets: [
+      p('Luxury Automotive', 'Style', 'luxury car commercial: liquid light reflections on paint, rolling shots, dusk cityscape, immaculate grade'),
+      p('Perfume Ad', 'Style', 'perfume commercial: ethereal slow motion, silk and glass, backlit particles, sensual gold-and-black palette'),
+      p('Tech Product', 'Style', 'tech product film: floating product on seamless gradient, precise macro passes, cool minimal palette'),
+      p('Sports Brand', 'Style', 'athletic brand commercial: sweat and determination, dramatic rim light, gritty urban training ground, anthem energy'),
+      p('Fast Food', 'Style', 'food commercial: hyper-appetizing macro, steam and drips in slow motion, saturated warm palette'),
+      p('Fashion Campaign', 'Style', 'fashion campaign: bold color blocking, strong poses, hard studio flash, editorial confidence'),
+      p('Real Estate / Interior', 'Style', 'interior lifestyle film: bright airy rooms, gentle dolly moves, morning light through sheer curtains'),
+      p('Jewelry Macro', 'Style', 'jewelry commercial: extreme macro sparkle, black velvet backdrop, precise light sweeps across facets'),
+      p('Streetwear Drop', 'Style', 'streetwear campaign: flash-lit night shots, raw urban texture, lo-fi attitude, high contrast'),
+      p('Corporate Clean', 'Style', 'corporate brand film: soft daylight offices, diverse candid teams, optimistic clean grade'),
+    ],
+  },
+  // ───────────────────────────── COMPOSITION ──────────────────────────────
+  {
+    id: 'composition', label: 'Composition', category: 'COMPOSITION',
+    presets: [
+      p('Rule of Thirds', 'Composition', 'subject placed on rule-of-thirds intersection, balanced negative space'),
+      p('Dead Center', 'Composition', 'perfectly centered symmetrical composition, formal and confrontational'),
+      p('Leading Lines', 'Composition', 'strong leading lines pulling the eye to the subject, one-point perspective depth'),
+      p('Frame Within Frame', 'Composition', 'subject framed within a frame — doorway, window or archway — adding voyeuristic depth'),
+      p('Negative Space', 'Composition', 'vast negative space dwarfing the subject, isolation and scale'),
+      p('Depth Layers', 'Composition', 'clear foreground, midground and background layers, atmospheric depth separation'),
+      p('Golden Ratio', 'Composition', 'golden ratio spiral composition, organic visual flow toward the focal point'),
+      p('Dutch Angle', 'Composition', 'tilted dutch angle, unease and disorientation'),
+      p('Silhouette Against Light', 'Composition', 'subject as a clean silhouette against a bright background, graphic shape reading'),
+      p('Reflections', 'Composition', 'composition built on reflections — mirror, water or glass — doubling the subject'),
+      p('Over-the-Shoulder Depth', 'Composition', 'over-the-shoulder foreground element, soft occlusion framing the subject'),
+      p('Low Horizon', 'Composition', 'low horizon line, dominant dramatic sky occupying most of the frame'),
+      p('Tight Claustrophobic', 'Composition', 'tight claustrophobic framing, no headroom, compressed and tense'),
+      p('Extreme Wide Scale', 'Composition', 'extreme wide framing, tiny human figure against monumental environment'),
+    ],
+  },
+  // ──────────────────────────── SINGLE SHOTS ──────────────────────────────
+  {
+    id: 'single-shots', label: 'Single Shots', category: 'SINGLE SHOTS',
+    presets: [
+      p('Extreme Close-Up', 'Camera', 'extreme close-up isolating a single detail — eyes, hands, texture — macro intimacy'),
+      p('Close-Up', 'Camera', 'close-up on the face, shallow depth of field, every micro-expression readable'),
+      p('Medium Close-Up', 'Camera', 'medium close-up from the chest up, conversational intimacy'),
+      p('Medium Shot', 'Camera', 'medium shot from the waist up, balanced subject and context'),
+      p('Cowboy Shot', 'Camera', 'cowboy shot framed mid-thigh up, poised for action'),
+      p('Full Shot', 'Camera', 'full body shot, complete wardrobe and posture visible, grounded in the environment'),
+      p('Wide / Establishing', 'Camera', 'wide establishing shot, geography and scale of the location clearly readable'),
+      p('Extreme Wide', 'Camera', 'extreme wide shot, subject nearly lost in the vast environment'),
+      p('Insert Shot', 'Camera', 'insert shot of a crucial object or detail, story-driven emphasis'),
+      p('Two-Shot', 'Camera', 'two-shot holding both characters in frame, spatial relationship and tension readable'),
+      p('POV', 'Camera', 'first-person point-of-view shot, subjective immersion'),
+      p('Reflection Shot', 'Camera', 'subject seen through a reflection, layered and voyeuristic'),
+    ],
+  },
+  // ─────────────────────────────── ANGLES ─────────────────────────────────
+  {
+    id: 'angles', label: 'Angles', category: 'SINGLE SHOTS',
+    presets: [
+      p('Low Angle (Hero)', 'Camera', 'low-angle perspective looking up at the subject, epic and imposing'),
+      p('High Angle', 'Camera', 'high-angle looking down, subject diminished and vulnerable'),
+      p('Eye Level', 'Camera', 'neutral eye-level angle, honest and human'),
+      p('Overhead / Top-Down', 'Camera', "directly overhead bird's-eye view, graphic abstract geometry"),
+      p("Worm's Eye", 'Camera', "worm's-eye view from the ground, towering vertiginous scale"),
+      p('Dutch Tilt', 'Camera', 'canted dutch angle, psychological instability'),
+      p('Over-the-Shoulder', 'Camera', 'over-the-shoulder angle, conversation geometry with foreground occlusion'),
+      p('Profile', 'Camera', 'strict profile angle, graphic silhouette of the face'),
+      p('Three-Quarter', 'Camera', 'three-quarter angle on the subject, dimensional and flattering'),
+      p('From Behind', 'Camera', 'shot from directly behind the subject, following their gaze into the scene'),
+    ],
+  },
+  // ────────────────────────── CAMERA MOVEMENT ─────────────────────────────
+  {
+    id: 'movement', label: 'Camera Movement', category: 'CAMERA & LIGHTING',
+    presets: [
+      p('Slow Push-In', 'Camera', 'slow dolly push-in toward the subject, mounting emotional pressure'),
+      p('Pull-Back Reveal', 'Camera', 'steady pull-back revealing the wider context around the subject'),
+      p('Orbit', 'Camera', 'smooth orbital move circling the subject, dimensional showcase'),
+      p('Tracking Lateral', 'Camera', 'lateral tracking shot moving with the subject, parallax through foreground elements'),
+      p('Crane Up', 'Camera', 'crane move rising from eye level to high wide, scale reveal'),
+      p('Dolly Zoom', 'Camera', 'dolly zoom (vertigo effect), background warping while subject stays fixed, dread'),
+      p('Handheld Urgency', 'Camera', 'raw handheld camera, breathing frame, documentary urgency'),
+      p('Steadicam Follow', 'Camera', 'flowing steadicam following behind the subject through the space, unbroken take feel'),
+      p('Whip Pan', 'Camera', 'aggressive whip pan transition, motion-blurred energy'),
+      p('Drone Flyover', 'Camera', 'sweeping drone flyover, gliding over the landscape toward the subject'),
+      p('Static Locked-Off', 'Camera', 'locked-off static frame, action unfolding inside a rigorous composition'),
+      p('Slow Motion 120fps', 'Camera', 'ultra slow motion at 120fps, every particle and droplet suspended'),
+    ],
+  },
+  // ────────────────────────── LIGHTING SETUPS ─────────────────────────────
+  {
+    id: 'lighting-setups', label: 'Lighting Setups', category: 'CAMERA & LIGHTING',
+    presets: [
+      p('Golden Hour', 'Lighting', 'golden hour sunlight, long warm shadows, honeyed rim light on the subject'),
+      p('Blue Hour', 'Lighting', 'blue hour twilight, cool ambient wash against warm practical lights'),
+      p('Rembrandt', 'Lighting', 'Rembrandt lighting, triangular cheek highlight, painterly single-source shadow'),
+      p('High-Key', 'Lighting', 'high-key lighting, bright even exposure, minimal shadows, optimistic clean look'),
+      p('Low-Key', 'Lighting', 'low-key lighting, deep shadows swallowing the frame, single motivated source'),
+      p('Neon Night', 'Lighting', 'neon night lighting, magenta and cyan practicals reflecting on wet surfaces'),
+      p('Firelight', 'Lighting', 'blazing firelight with strong contrast, warm flicker, deep dancing shadows'),
+      p('Candlelight', 'Lighting', 'intimate candlelight, amber pools of light, soft falloff into darkness'),
+      p('Window Light', 'Lighting', 'soft directional window light, gentle gradient across the face, natural interior'),
+      p('Overcast Soft', 'Lighting', 'overcast diffused daylight, shadowless soft wrap, honest muted tones'),
+      p('Hard Noon Sun', 'Lighting', 'hard top-down noon sun, brutal contrast, knife-edge shadows'),
+      p('Backlit Silhouette', 'Lighting', 'strong backlight, subject rimmed in light, atmospheric haze glowing'),
+      p('Volumetric God Rays', 'Lighting', 'volumetric god rays cutting through dust or fog, cathedral light shafts'),
+      p('Police Lights', 'Lighting', 'alternating red and blue emergency lights strobing across the scene'),
+      p('Screen Glow', 'Lighting', 'cold monitor glow as the only source, face lit from below, digital isolation'),
+      p('Storm Lightning', 'Lighting', 'stormy darkness punctured by lightning flashes, split-second harsh exposure'),
+    ],
+  },
+  // ─────────────────────────────── CAMERAS ────────────────────────────────
+  {
+    id: 'cameras', label: 'Cameras', category: 'CAMERA & LIGHTING',
+    presets: [
+      p('ARRI Alexa 65', 'Camera', 'shot on ARRI Alexa 65, large-format cinematic depth, gentle highlight rolloff'),
+      p('ARRI Alexa Mini', 'Camera', 'shot on ARRI Alexa Mini, industry-standard filmic color science'),
+      p('RED V-Raptor 8K', 'Camera', 'shot on RED V-Raptor, razor-sharp 8K detail, modern digital crispness'),
+      p('IMAX 70mm', 'Camera', 'shot on IMAX 70mm film, monumental clarity and scale, immersive depth'),
+      p('Panavision Panaflex', 'Camera', 'shot on 35mm Panavision Panaflex, classic Hollywood film texture'),
+      p('Bolex 16mm', 'Camera', 'shot on Bolex 16mm, art-school grain, hand-wound organic imperfection'),
+      p('Sony Venice 2', 'Camera', 'shot on Sony Venice 2, clean low-light rendering, full-frame depth'),
+      p('Leica M6 35mm', 'Camera', 'shot on Leica M6 with 35mm film, street reportage soul, rangefinder discretion'),
+      p('Hasselblad Medium Format', 'Camera', 'shot on Hasselblad medium format, creamy tonal transitions, studio-grade resolution'),
+      p('GoPro POV', 'Camera', 'GoPro action POV, ultra-wide distortion, visceral first-person energy'),
+      p('VHS Camcorder', 'Camera', '1990s VHS camcorder, smeared scanlines, timestamp overlay, home-video artifacts'),
+      p('Security CCTV', 'Camera', 'grainy CCTV security footage, fixed high corner angle, timestamp, surveillance texture'),
+    ],
+  },
+  // ──────────────────────── LENS CHARACTERISTICS ──────────────────────────
+  {
+    id: 'lenses', label: 'Lens Characteristics', category: 'CAMERA & LIGHTING',
+    presets: [
+      p('Anamorphic', 'Camera', 'anamorphic lens: oval bokeh, horizontal blue flares, 2.39:1 cinematic squeeze'),
+      p('Vintage Glass', 'Camera', 'vintage uncoated lens: soft halation, low contrast, character-rich imperfections'),
+      p('85mm f/1.4 Portrait', 'Camera', '85mm at f/1.4: compressed flattering perspective, melted creamy background'),
+      p('50mm f/1.8 Natural', 'Camera', '50mm at f/1.8: natural human perspective, gentle subject separation'),
+      p('35mm Environmental', 'Camera', '35mm lens: subject in context, honest documentary field of view'),
+      p('24mm Wide Immersive', 'Camera', '24mm wide angle: immersive proximity, slight expressive distortion at edges'),
+      p('14mm Ultra-Wide', 'Camera', '14mm ultra-wide: dramatic perspective exaggeration, vast interior sweep'),
+      p('100mm Macro', 'Camera', '100mm macro: life-size detail, microscopic texture, razor focus plane'),
+      p('200mm Telephoto', 'Camera', '200mm telephoto compression: stacked planes, subject isolated from crushed background'),
+      p('Fisheye', 'Camera', 'fisheye lens: curved horizon, skate-video energy, extreme circular distortion'),
+      p('Tilt-Shift Miniature', 'Camera', 'tilt-shift lens: miniature diorama effect, selective focus strip'),
+      p('Lensbaby Dreamy', 'Camera', 'dreamy swirl lens: smeared radial edges, sharp central sweet spot'),
+    ],
+  },
+  // ──────────────────────────── COLOR GRADES ──────────────────────────────
+  {
+    id: 'color-grades', label: 'Color Grades', category: 'CAMERA & LIGHTING',
+    presets: [
+      p('Teal & Orange', 'Color', 'teal and orange blockbuster grade, warm skin against cool shadows'),
+      p('Desaturated Steel', 'Color', 'desaturated steel-blue grade, cold institutional mood'),
+      p('Warm Nostalgia', 'Color', 'warm amber nostalgia grade, lifted blacks, faded summer-memory feel'),
+      p('Neon Duotone', 'Color', 'magenta-cyan neon duotone, synthwave night palette'),
+      p('Earthy Naturals', 'Color', 'earthy natural grade, olive greens and terracotta, organic warmth'),
+      p('Monochrome Silver', 'Color', 'silver-toned black and white, deep blacks, luminous highlight detail'),
+      p('Pastel Airy', 'Color', 'airy pastel grade, soft pinks and mints, lifted dreamy exposure'),
+      p('Sepia Antique', 'Color', 'antique sepia tone, aged photograph patina'),
+      p('High-Contrast Noir', 'Color', 'crushed-black high-contrast grade, ink shadows, stark whites'),
+      p('Golden Honey', 'Color', 'golden honey grade, sun-drenched warmth in every tone'),
+    ],
+  },
+  // ─────────────────────────── CREATIVE TOOLS ─────────────────────────────
+  {
+    id: 'what-if', label: 'What If…', category: 'CREATIVE TOOLS',
+    presets: [
+      p('…underwater', 'Details', 'reimagine the entire scene as if it happened underwater: suspended motion, refracted light, drifting debris'),
+      p('…in zero gravity', 'Details', 'reimagine the scene in zero gravity: floating objects and hair, untethered choreography'),
+      p('…100 years ago', 'Details', 'transpose the scene 100 years into the past: period wardrobe, technology and architecture of the 1920s'),
+      p('…post-apocalyptic', 'Details', 'reimagine the scene decades after civilization collapsed: overgrowth, decay, improvised survival'),
+      p('…as a dream', 'Details', 'render the scene as a lucid dream: impossible geometry, soft physics, symbolic intrusions'),
+      p('…miniature scale', 'Details', 'the entire scene as a handcrafted miniature diorama, tilt-shift realism, visible model textures'),
+      p('…during a blackout', 'Details', 'the same scene during a total blackout: flashlights, candles and phone screens as the only light'),
+      p('…in torrential rain', 'Environment', 'drench the scene in torrential rain: soaked surfaces, splashing droplets, headlights through the downpour'),
+      p('…covered in snow', 'Environment', 'bury the scene in fresh snowfall: muffled silence, breath vapor, blue-white palette'),
+      p('…at the golden hour', 'Environment', 'shift the scene to golden hour: long warm shadows transforming the ordinary into the epic'),
+    ],
+  },
+  {
+    id: 'scene-extender', label: 'Scene Extender', category: 'CREATIVE TOOLS',
+    presets: [
+      p('Moments Before', 'Action', 'depict the instant immediately BEFORE the main event: tension loaded, cause visible, effect not yet released'),
+      p('Moments After', 'Action', 'depict the aftermath immediately AFTER the main event: consequences, debris, emotional residue'),
+      p('Reverse Angle', 'Camera', 'the exact same moment from the opposite side of the scene, revealing what the first angle hid'),
+      p('Reaction Shot', 'Camera', 'cut to a witness reacting to the main event, the event itself off-screen or reflected'),
+      p("Detail Cutaway", 'Camera', 'cutaway to a significant detail inside the same scene: an object, a hand, a small telling gesture'),
+      p('Wider Context', 'Camera', 'pull way out: the same scene seen from far away, embedded in its full environment'),
+      p('One Hour Later', 'Action', 'the same location one hour later: light shifted, evidence of what happened remains'),
+      p('Someone Was Watching', 'Camera', 'the same moment seen from a hidden observer\'s vantage point: partially obstructed, voyeuristic'),
+    ],
+  },
+  {
+    id: 'emotion-wheel', label: 'Emotion Wheel', category: 'CREATIVE TOOLS',
+    presets: [
+      p('Awe', 'Mood', 'overwhelming awe: jaw-slack wonder before something vastly larger than the self'),
+      p('Dread', 'Mood', 'slow-building dread: something is wrong and getting closer'),
+      p('Euphoria', 'Mood', 'unfiltered euphoria: peak joy, weightless, radiant'),
+      p('Melancholy', 'Mood', 'tender melancholy: beauty and sadness inseparable, rain-on-window stillness'),
+      p('Rage', 'Mood', 'volcanic rage: clenched, trembling, a second from eruption'),
+      p('Serenity', 'Mood', 'deep serenity: breath slowed, world quiet, everything in its place'),
+      p('Longing', 'Mood', 'aching longing: reaching toward something or someone out of reach'),
+      p('Triumph', 'Mood', 'hard-won triumph: exhausted victory, fists raised against the sky'),
+      p('Isolation', 'Mood', 'crushing isolation: one figure, empty vastness, unheard'),
+      p('Tension', 'Mood', 'coiled tension: stillness before violence, held breath'),
+      p('Nostalgia', 'Mood', 'warm nostalgia: sun-faded memory, a time that can\'t return'),
+      p('Defiance', 'Mood', 'burning defiance: outnumbered and unbowed, chin raised'),
+      p('Wonder', 'Mood', 'childlike wonder: eyes wide, discovering the impossible'),
+      p('Grief', 'Mood', 'hollow grief: the world continuing while someone\'s has stopped'),
+      p('Menace', 'Mood', 'quiet menace: politeness stretched over threat'),
+      p('Hope', 'Mood', 'fragile hope: a single light in overwhelming darkness'),
+    ],
+  },
+  // ─────────────────────────── ENVIRONMENTS ───────────────────────────────
+  {
+    id: 'environments', label: 'Environments', category: 'CREATIVE TOOLS',
+    presets: [
+      p('Neon Metropolis', 'Environment', 'dense neon metropolis at night, holographic ads, steam vents, crowded wet streets'),
+      p('Brutalist Interior', 'Environment', 'vast brutalist concrete interior, raw geometry, single human dwarfed by architecture'),
+      p('Foggy Forest', 'Environment', 'ancient forest in thick fog, light shafts between trunks, moss and silence'),
+      p('Desert Highway', 'Environment', 'endless desert highway at dusk, heat shimmer, telephone poles vanishing to the horizon'),
+      p('Abandoned Factory', 'Environment', 'abandoned industrial factory, broken skylights, dust in god rays, rusted machinery'),
+      p('Rooftop at Night', 'Environment', 'city rooftop at night, skyline bokeh, wind, edge-of-the-world energy'),
+      p('Coastal Cliffs', 'Environment', 'storm-battered coastal cliffs, crashing spray, gulls against slate sky'),
+      p('Old Library', 'Environment', 'centuries-old library, towering shelves, ladders, dust motes in window light'),
+      p('Subway Platform', 'Environment', 'late-night subway platform, fluorescent hum, arriving train light in the tunnel'),
+      p('Alpine Summit', 'Environment', 'alpine summit above the clouds, blinding snow, prayer-flag wind'),
+      p('Rain-Slicked Alley', 'Environment', 'narrow rain-slicked alley, neon reflections, fire escapes, steam from grates'),
+      p('Greenhouse', 'Environment', 'overgrown Victorian greenhouse, humid glass panes, tropical chaos reclaiming iron'),
+    ],
+  },
+  // ────────────────────────── TIME & WEATHER ──────────────────────────────
+  {
+    id: 'time-weather', label: 'Time & Weather', category: 'CREATIVE TOOLS',
+    presets: [
+      p('Dawn Mist', 'Environment', 'first light of dawn through ground mist, world half-awake'),
+      p('Harsh Noon', 'Environment', 'harsh vertical noon sun, bleached colors, hard short shadows'),
+      p('Golden Hour', 'Environment', 'late golden hour, amber light raking across every surface'),
+      p('Twilight', 'Environment', 'deep twilight, last violet light, first stars, streetlights flickering on'),
+      p('Dead of Night', 'Environment', 'dead of night, moonless dark, isolated pools of artificial light'),
+      p('Thunderstorm', 'Environment', 'violent thunderstorm, sheets of rain, lightning freezing the scene in strobes'),
+      p('Snowfall', 'Environment', 'heavy silent snowfall, flakes catching every light source'),
+      p('Sandstorm', 'Environment', 'approaching wall of sandstorm, ochre sky, visibility collapsing'),
+      p('Heatwave', 'Environment', 'oppressive heatwave, shimmering air, sweat, cicada drone'),
+      p('Morning Fog', 'Environment', 'dense morning fog, shapes emerging as silhouettes, muffled sound'),
+    ],
+  },
+  // ────────────────────────────── REALISM ─────────────────────────────────
+  {
+    id: 'realism', label: 'Realism Boosters', category: 'PHOTO STYLES',
+    presets: [
+      p('Skin Micro-Detail', 'Details', 'true-to-life skin: visible pores, subsurface scattering, fine vellus hair, natural asymmetry'),
+      p('Fabric & Material', 'Details', 'tactile material realism: visible fabric weave, worn edges, authentic wear patterns'),
+      p('Atmospheric Depth', 'Details', 'atmospheric perspective: haze increasing with distance, believable air between planes'),
+      p('Imperfect World', 'Details', 'lived-in imperfection: scuffs, dust, fingerprints, asymmetry — nothing showroom-clean'),
+      p('Physically Correct Light', 'Details', 'physically accurate light behavior: correct falloff, bounce color bleed, true shadow softness'),
+      p('Documentary Authenticity', 'Details', 'unstaged authenticity: imperfect framing, real expressions caught mid-thought'),
+      p('Anti-AI-Look', 'Negative', 'avoid: plastic skin, over-smooth surfaces, extra fingers, dead eyes, waxy highlights, oversaturated HDR look'),
+      p('Clean Output', 'Negative', 'avoid: watermarks, text artifacts, borders, signature, low resolution, jpeg artifacts, mutated anatomy'),
+    ],
+  },
+]
+
+// ── Plantillas multi-sección (arranques rápidos de escena completa) ──
+export const SCENE_TEMPLATES = [
+  t('Explosión urbana', {
+    Subject: 'A huge explosion as the sole focus, massive in scale and overwhelming in impact. The blast should feel intense, violent, and visually dominant.',
+    Style: 'Extremely cinematic, with a dramatic blockbuster look. High realism, rich detail, and powerful visual spectacle.',
+    Lighting: 'Blazing firelight with strong contrast, bright highlights, and deep shadows. The explosion illuminates the scene with intense, dynamic glow.',
+    Camera: 'Wide, dramatic framing to emphasize the scale of the explosion. Slightly low-angle perspective for a more epic and imposing feel.',
+    Mood: 'Chaotic, intense, and awe-inspiring. A sense of unstoppable destructive force.',
+  }, 'La escena demo clásica de CRAFTR'),
+  t('Retrato íntimo', {
+    Subject: 'A weathered face in quiet thought, eyes carrying an untold story, framed against darkness.',
+    Style: 'Fine art portrait, painterly and timeless, shot on medium format.',
+    Lighting: 'Single window light from the left, Rembrandt triangle on the cheek, deep soft shadow falloff.',
+    Camera: '85mm at f/1.4, extreme close-up, razor focus on the eyes, melted background.',
+    Mood: 'Intimate, contemplative, heavy with unspoken history.',
+  }),
+  t('Persecución nocturna', {
+    Subject: 'A lone figure sprinting through traffic, coat flying, pursued by unseen headlights.',
+    Style: 'Neo-noir thriller, CineStill 800T night tones, halated neon.',
+    Lighting: 'Sodium streetlights and neon signs reflecting on rain-slicked asphalt, strobing headlights.',
+    Camera: 'Low-angle lateral tracking shot, handheld urgency, motion blur streaking the background.',
+    Action: 'Full sprint mid-stride, splashing through puddles, glancing back over the shoulder.',
+    Mood: 'Desperate, breathless, hunted.',
+  }),
+  t('Paisaje épico', {
+    Subject: 'A solitary traveler standing at the edge of a vast alpine ridge above a sea of clouds.',
+    Style: 'Epic landscape cinema, IMAX 70mm clarity, Villeneuve-scale monumentality.',
+    Lighting: 'First light of dawn breaking across the peaks, long pink-gold rays, blue shadow valleys.',
+    Camera: 'Extreme wide shot, tiny human figure against monumental environment, slow drone pull-back.',
+    Environment: 'Snow-capped peaks piercing through clouds, wind-driven snow wisps off the ridgeline.',
+    Mood: 'Awe, insignificance and grandeur in the same breath.',
+  }),
+  t('Interior sci-fi', {
+    Subject: 'An engineer inspecting a dormant colossal machine in a cathedral-scale server hall.',
+    Style: 'Hard science fiction, sleek production design, atmospheric haze, cold precision.',
+    Lighting: 'Cold volumetric top light through grated ceilings, status LEDs blinking in the dark depths.',
+    Camera: 'Slow push-in from extreme wide, one-point perspective down the machine corridor.',
+    Environment: 'Endless rows of monolithic black servers, cables like roots, faint steam from cooling vents.',
+    Mood: 'Reverent, uneasy, on the edge of awakening something.',
+  }),
+]
+
+export const CATEGORY_ORDER = [
+  'PHOTO STYLES', 'COMPOSITION', 'SINGLE SHOTS', 'CREATIVE TOOLS', 'CAMERA & LIGHTING',
+]

@@ -1,0 +1,340 @@
+import React, { useCallback, useRef, useState } from 'react'
+import Editor from './components/Editor.jsx'
+import PresetSidebar from './components/PresetSidebar.jsx'
+import CharacterStudio from './components/CharacterStudio.jsx'
+import StoryboardView from './components/StoryboardView.jsx'
+import SettingsModal from './components/SettingsModal.jsx'
+import ExportModal from './components/ExportModal.jsx'
+import StyleLab from './components/StyleLab.jsx'
+import { PRESET_GROUPS } from './data/presets.js'
+
+const ALL_INSERT_PRESETS = PRESET_GROUPS.flatMap((g) => g.presets).filter((p) => p.kind === 'insert')
+import { usePersistedState, uid } from './lib/storage.js'
+import { ACTION_LIST, runAction, runSmartEdit, sectionsToText, isReady, providerHint, OLLAMA_DEFAULT_URL } from './lib/anthropic.js'
+
+const DEFAULT_SECTIONS = []
+
+export default function App() {
+  const [sections, setSections] = usePersistedState(React, 'sections', DEFAULT_SECTIONS)
+  const [favorites, setFavorites] = usePersistedState(React, 'favorites', [])
+  const [customPresets, setCustomPresets] = usePersistedState(React, 'customPresets', [])
+  const [characters, setCharacters] = usePersistedState(React, 'characters', [])
+  const [settings, setSettings] = usePersistedState(React, 'settings', {
+    provider: 'anthropic', apiKey: '', model: 'claude-sonnet-5',
+    ollamaUrl: OLLAMA_DEFAULT_URL, ollamaModel: '',
+  })
+  const [view, setView] = useState('editor')
+  const [busy, setBusy] = useState(null)
+  const [instruction, setInstruction] = useState('')
+  const [showCS, setShowCS] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [showExport, setShowExport] = useState(false)
+  const [showStyleLab, setShowStyleLab] = useState(false)
+  const [editMenu, setEditMenu] = useState(false)
+  const [hoverMark, setHoverMark] = useState(null)
+  const [exportTarget, setExportTarget] = usePersistedState(React, 'exportTarget', 'structured')
+  const [exportAr, setExportAr] = usePersistedState(React, 'exportAr', '16:9')
+  const [toasts, setToasts] = useState([])
+  const [lastAddedId, setLastAddedId] = useState(null)
+  const undoStack = useRef([])
+  const redoStack = useRef([])
+
+  const toast = useCallback((msg, kind = '') => {
+    const id = uid()
+    setToasts((prev) => [...prev, { id, msg, kind }])
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500)
+  }, [])
+
+  const pushUndo = useCallback(() => {
+    undoStack.current.push(JSON.stringify(sections))
+    if (undoStack.current.length > 30) undoStack.current.shift()
+    redoStack.current = []
+  }, [sections])
+
+  const undo = () => {
+    const prev = undoStack.current.pop()
+    if (!prev) return toast('Nada que deshacer')
+    redoStack.current.push(JSON.stringify(sections))
+    setSections(JSON.parse(prev))
+  }
+
+  const redo = () => {
+    const next = redoStack.current.pop()
+    if (!next) return toast('Nada que rehacer')
+    undoStack.current.push(JSON.stringify(sections))
+    setSections(JSON.parse(next))
+  }
+
+  // Secciones que contienen al menos un preset aplicado (para marcar # en accent).
+  const appliedSections = React.useMemo(() => {
+    const map = new Map(sections.map((s) => [s.name, s.text]))
+    const out = new Set()
+    for (const p of [...ALL_INSERT_PRESETS, ...customPresets]) {
+      if (p.kind === 'insert' && p.text && (map.get(p.section) || '').includes(p.text)) out.add(p.section)
+    }
+    return out
+  }, [sections, customPresets])
+
+  // Reemplaza el contenido con secciones parseadas (de la IA), conservando ids.
+  const applyParsed = (parsed) => {
+    setSections((prev) => {
+      const byName = new Map(prev.map((s) => [s.name, s.id]))
+      return parsed.map((p) => ({ id: byName.get(p.name) || uid(), name: p.name, text: p.text }))
+    })
+  }
+
+  // Fusiona un objeto {Sección: texto} dentro del prompt actual.
+  const mergeSections = (obj) => {
+    pushUndo()
+    setSections((prev) => {
+      let next = prev.map((s) => ({ ...s }))
+      for (const [name, text] of Object.entries(obj)) {
+        if (!text || !text.trim()) continue
+        const existing = next.find((s) => s.name === name)
+        if (existing) {
+          const cur = existing.text.trim()
+          existing.text = cur ? cur + (cur.endsWith('.') ? ' ' : '. ') + text : text
+        } else {
+          next.push({ id: uid(), name, text })
+        }
+      }
+      return next
+    })
+  }
+
+  const addSection = (name) => {
+    const id = uid()
+    setLastAddedId(id)
+    setSections((prev) => [...prev, { id, name, text: '' }])
+  }
+
+  const insertPreset = (preset) => {
+    if (preset.kind === 'template') {
+      pushUndo()
+      setSections(Object.entries(preset.sections).map(([name, text]) => ({ id: uid(), name, text })))
+      toast(`Plantilla “${preset.name}” cargada`, 'ok')
+      return
+    }
+    if (preset.kind === 'style') {
+      mergeSections(preset.sections)
+      toast(`ADN “${preset.name}” aplicado al prompt`, 'ok')
+      return
+    }
+    mergeSections({ [preset.section]: preset.text })
+    toast(`“${preset.name}” → # ${preset.section}`, 'ok')
+  }
+
+  const saveStylePreset = (name, sectionsObj) => {
+    setCustomPresets((prev) => [
+      ...prev,
+      { id: 'c' + uid(), kind: 'style', name, sections: sectionsObj, desc: 'ADN visual extraído de una imagen' },
+    ])
+  }
+
+  const replaceSections = (obj) => {
+    pushUndo()
+    setSections(Object.entries(obj).map(([name, text]) => ({ id: uid(), name, text })))
+  }
+
+  const savePresetFromSection = (section) => {
+    if (!section.text.trim()) return toast('La sección está vacía', 'error')
+    const name = window.prompt('Nombre del preset:', section.name + ' custom')
+    if (!name) return
+    setCustomPresets((prev) => [
+      ...prev,
+      { id: 'c' + uid(), kind: 'insert', name, section: section.name, text: section.text.trim() },
+    ])
+    toast(`Preset “${name}” guardado`, 'ok')
+  }
+
+  const doAction = async (actionId) => {
+    if (!isReady(settings)) {
+      setShowSettings(true)
+      return toast(providerHint(settings), 'error')
+    }
+    setBusy(actionId)
+    try {
+      pushUndo()
+      const parsed = await runAction({ settings, actionId, sections })
+      applyParsed(parsed)
+      toast(`${ACTION_LIST.find((a) => a.id === actionId)?.label} aplicado ✓`, 'ok')
+    } catch (e) {
+      if (e.message === 'EMPTY_PROMPT') toast('El prompt está vacío', 'error')
+      else toast('Error: ' + e.message, 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const doSmartEdit = async () => {
+    const ins = instruction.trim()
+    if (!ins) return
+    if (!isReady(settings)) {
+      setShowSettings(true)
+      return toast(providerHint(settings), 'error')
+    }
+    setBusy('smart')
+    try {
+      pushUndo()
+      const parsed = await runSmartEdit({ settings, instruction: ins, sections })
+      applyParsed(parsed)
+      setInstruction('')
+      toast('Smart Edit aplicado ✓', 'ok')
+    } catch (e) {
+      toast('Error: ' + e.message, 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const copyPrompt = () => {
+    const text = sectionsToText(sections)
+    if (!text) return toast('El prompt está vacío', 'error')
+    navigator.clipboard.writeText(text)
+    toast('Prompt copiado al portapapeles', 'ok')
+  }
+
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="logo">
+          <span className="spark">✦</span>
+          KRACK<span className="lab">LAB</span>
+        </div>
+        <div className="tb-actions">
+          <button
+            className={'tb-btn' + (view === 'editor' ? ' active' : '')}
+            onClick={() => setView('editor')}
+          >Editor</button>
+          <button
+            className={'tb-btn' + (view === 'storyboard' ? ' active' : '')}
+            onClick={() => setView('storyboard')}
+          >Storyboard</button>
+          <span style={{ width: 1, background: 'var(--border)', margin: '8px 6px' }} />
+          <div className="dropdown">
+            <button
+              className={'tb-btn' + (editMenu ? ' active' : '')}
+              disabled={!!busy && busy !== 'smart'}
+              onClick={() => setEditMenu((v) => !v)}
+            >{busy && busy !== 'smart' ? <span className="spinner" /> : '✏️ '}Edit ▾</button>
+            {editMenu && (
+              <>
+                <div className="menu-backdrop" onClick={() => setEditMenu(false)} />
+                <div className="menu">
+                  {ACTION_LIST.map((a) => (
+                    <button
+                      key={a.id}
+                      className="menu-item"
+                      onClick={() => { setEditMenu(false); doAction(a.id) }}
+                    >{a.label}</button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          <button className="tb-btn" onClick={undo} title="Deshacer">↩ Undo</button>
+          <button className="tb-btn" onClick={redo} title="Rehacer">↪ Redo</button>
+        </div>
+        <button className="btn" onClick={() => setShowStyleLab(true)} title="Extraer el ADN visual de una imagen">🧬 Style DNA</button>
+        <button className="btn" onClick={() => setShowCS(true)}>👤 Character Studio</button>
+        <button className="btn" onClick={copyPrompt} title="Copiar con # encabezados">⧉ Copiar</button>
+        <button className="btn primary" onClick={() => setShowExport(true)} title="Compilar para Midjourney, Sora, Kling, SDXL…">🎯 Exportar</button>
+        <button className="btn ghost" onClick={() => setShowSettings(true)} title="Ajustes">⚙</button>
+      </header>
+
+      <main className="main">
+        {view === 'editor' ? (
+          <Editor
+            sections={sections}
+            setSections={setSections}
+            lastAddedId={lastAddedId}
+            hoverMark={hoverMark}
+            appliedSections={appliedSections}
+            onAddSection={addSection}
+            onSavePreset={savePresetFromSection}
+            onLoadTemplate={(t) => insertPreset(t)}
+          />
+        ) : (
+          <StoryboardView sections={sections} settings={settings} toast={toast} />
+        )}
+      </main>
+
+      {view === 'editor' && (
+        <div className="smartbar">
+          <input
+            placeholder='Smart Edit — escribí una instrucción… ej: "cambiá la luz a un día nublado"'
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && doSmartEdit()}
+          />
+          <button className="btn primary" onClick={doSmartEdit} disabled={busy === 'smart'}>
+            {busy === 'smart' ? <span className="spinner" /> : '✨ '}Smart Edit
+          </button>
+        </div>
+      )}
+
+      <PresetSidebar
+        favorites={favorites}
+        onToggleFav={(id) =>
+          setFavorites((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
+        }
+        onInsert={insertPreset}
+        customPresets={customPresets}
+        onDeleteCustom={(p) => setCustomPresets((prev) => prev.filter((x) => x.id !== p.id))}
+        sections={sections}
+        onHoverPreset={(p) => setHoverMark(p ? { section: p.section, text: p.text } : null)}
+      />
+
+      {showCS && (
+        <CharacterStudio
+          settings={settings}
+          characters={characters}
+          setCharacters={setCharacters}
+          onUse={mergeSections}
+          onClose={() => setShowCS(false)}
+          toast={toast}
+        />
+      )}
+      {showStyleLab && (
+        <StyleLab
+          settings={settings}
+          onApply={mergeSections}
+          onReplace={replaceSections}
+          onSavePreset={saveStylePreset}
+          onClose={() => setShowStyleLab(false)}
+          toast={toast}
+          target={exportTarget}
+          setTarget={setExportTarget}
+          ar={exportAr}
+          setAr={setExportAr}
+        />
+      )}
+      {showExport && (
+        <ExportModal
+          sections={sections}
+          target={exportTarget}
+          setTarget={setExportTarget}
+          ar={exportAr}
+          setAr={setExportAr}
+          onClose={() => setShowExport(false)}
+          toast={toast}
+        />
+      )}
+      {showSettings && (
+        <SettingsModal
+          settings={settings}
+          setSettings={setSettings}
+          onClose={() => setShowSettings(false)}
+          toast={toast}
+        />
+      )}
+
+      <div className="toasts">
+        {toasts.map((t) => (
+          <div key={t.id} className={'toast ' + t.kind}>{t.msg}</div>
+        ))}
+      </div>
+    </div>
+  )
+}
