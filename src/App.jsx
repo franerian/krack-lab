@@ -217,7 +217,7 @@ export default function App() {
               className={'tb-btn' + (editMenu ? ' active' : '')}
               disabled={!!busy && busy !== 'smart'}
               onClick={() => setEditMenu((v) => !v)}
-            >{busy && busy !== 'smart' ? <span className="spinner" /> : '✏️ '}Edit ▾</button>
+            >{busy && busy !== 'smart' ? <span className="spinner" /> : null}Edit ▾</button>
             {editMenu && (
               <>
                 <div className="menu-backdrop" onClick={() => setEditMenu(false)} />
