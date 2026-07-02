@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react'
-import { analyzeImageStyle, isReady, providerHint } from '../lib/anthropic.js'
+import { analyzeImageStyle, critiqueStyleDNA, isReady, providerHint } from '../lib/anthropic.js'
 import { fileToImage } from '../lib/image.js'
+import { measureImage, extractFileMetadata, measurementsToText } from '../lib/imageAnalysis.js'
 import { highlightHtml } from '../lib/highlight.js'
 import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
 
@@ -8,7 +9,11 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   const [img, setImg] = useState(null)
   const [mode, setMode] = useState('style')
   const [busy, setBusy] = useState(false)
+  const [pass, setPass] = useState(0) // 0 = idle, 1 = extracción, 2 = autocrítica
+  const [verify, setVerify] = useState(true)
   const [result, setResult] = useState(null)
+  const [metrics, setMetrics] = useState(null)
+  const [meta, setMeta] = useState(null)
   const [drag, setDrag] = useState(false)
   const fileRef = useRef(null)
 
@@ -17,6 +22,10 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
       const loaded = await fileToImage(file)
       setImg(loaded)
       setResult(null)
+      // Mediciones objetivas: paleta, contraste, saturación, AR + metadata
+      // embebida (EXIF / prompt de generadores IA). Instantáneo, sin IA.
+      setMetrics(await measureImage(loaded.dataUrl).catch(() => null))
+      setMeta(await extractFileMetadata(file))
     } catch {
       toast('Ese archivo no es una imagen válida', 'error')
     }
@@ -26,14 +35,22 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     if (!img) return toast('Cargá primero una imagen de referencia', 'error')
     if (!isReady(settings)) return toast(providerHint(settings), 'error')
     setBusy(true)
+    const measurements = measurementsToText(metrics, meta)
     try {
-      const sections = await analyzeImageStyle({ settings, image: img, mode })
+      setPass(1)
+      let sections = await analyzeImageStyle({ settings, image: img, mode, measurements })
+      if (verify) {
+        setPass(2)
+        setResult(sections) // muestra el borrador mientras verifica
+        sections = await critiqueStyleDNA({ settings, image: img, draft: sections, mode, measurements })
+      }
       setResult(sections)
-      toast('ADN visual extraído ✓', 'ok')
+      toast(verify ? 'ADN extraído y verificado ✓' : 'ADN visual extraído ✓', 'ok')
     } catch (e) {
       toast('Error al analizar: ' + e.message, 'error')
     } finally {
       setBusy(false)
+      setPass(0)
     }
   }
 
@@ -88,13 +105,49 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                 ? <img src={img.dataUrl} alt="referencia" />
                 : <span>Arrastrá, pegá o clickeá<br />para cargar la imagen de referencia</span>}
             </div>
+            {metrics && (
+              <div className="metrics-panel">
+                <div className="metrics-title">Mediciones (código, no IA)</div>
+                <div className="palette-row">
+                  {metrics.palette.map((c) => (
+                    <span
+                      key={c.hex}
+                      className="swatch"
+                      style={{ background: c.hex, flexGrow: c.pct }}
+                      title={`${c.hex} · ${c.pct}%`}
+                    />
+                  ))}
+                </div>
+                <div className="metric-badges">
+                  <span className="metric-badge" title="Desviación tonal medida">Contraste {metrics.contrast10}/10</span>
+                  <span className="metric-badge">Saturación {metrics.saturation10}/10</span>
+                  <span className="metric-badge">{metrics.key}</span>
+                  <span className="metric-badge">{metrics.aspect}</span>
+                </div>
+                {meta?.kind === 'exif' && (
+                  <div className="meta-found" title={meta.text}>📷 EXIF real: {meta.text}</div>
+                )}
+                {meta?.kind === 'ai-prompt' && (
+                  <div className="meta-found gold" title={meta.text}>
+                    🎯 ¡Prompt original embebido detectado! ({meta.source}) — se usará como fuente principal
+                  </div>
+                )}
+              </div>
+            )}
+            <label className="verify-toggle">
+              <input type="checkbox" checked={verify} onChange={(e) => setVerify(e.target.checked)} />
+              Autocrítica (2ª pasada anti-exageración)
+            </label>
             <button className="btn primary" style={{ width: '100%' }} onClick={analyze} disabled={busy || !img}>
-              {busy ? <span className="spinner" /> : '🧬 '}Extraer ADN visual
+              {busy ? <span className="spinner" /> : '🧬 '}
+              {busy
+                ? (pass === 2 ? 'Verificando fidelidad… (2/2)' : `Extrayendo ADN… (1/${verify ? 2 : 1})`)
+                : 'Extraer ADN visual'}
             </button>
             <p className="hint">
               {mode === 'style'
-                ? 'Extrae medio, reglas de ejecución, cámara, luz, color y mood — sin el sujeto. El resultado se aplica sobre tus propias escenas.'
-                : 'Deconstruye la imagen completa (incluido el sujeto) como prompt de replicación fiel al ADN.'}
+                ? 'Extrae medio, reglas de ejecución, cámara, luz, color y mood — sin el sujeto. Las mediciones de arriba se le imponen a la IA como hechos.'
+                : 'Deconstruye la imagen completa (incluido el sujeto) como prompt de replicación fiel al ADN, calibrado con las mediciones.'}
             </p>
           </div>
           <div className="sl-right">

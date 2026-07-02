@@ -222,6 +222,8 @@ ${mode === 'style'
 
 MANDATORY: the # Camera section MUST state the precise shot type AND camera angle (e.g. "extreme low-angle wide shot"), plus lens character if readable.
 
+CALIBRATED SCALES: when the user message includes MEASURED GROUND TRUTH, those values were computed programmatically from the pixels and are non-negotiable facts. Your wording for contrast, saturation and brightness MUST be consistent with the measured N/10 values (e.g. contrast 3/10 can never be "high contrast"). In # Color, cite the dominant hex values verbatim alongside their color names. If CAMERA EXIF is present, # Camera must be built on it. Express contrast, saturation and brightness as "N/10" ratings inside the prompt so they stay reproducible.
+
 OUTPUT FORMAT — your entire response is EXACTLY this structure and nothing else (no preamble, no notes, no fences), in English:
 
 ${mode === 'replica' ? '# Subject\n(scene content, filtered through the DNA)\n\n' : ''}# Style
@@ -245,12 +247,34 @@ ${mode === 'replica' ? '# Subject\n(scene content, filtered through the DNA)\n\n
 # Negative
 avoid: (elements that would break this DNA)`
 
-export async function analyzeImageStyle({ settings, image, mode = 'style' }) {
+export async function analyzeImageStyle({ settings, image, mode = 'style', measurements = '' }) {
+  const base = mode === 'style'
+    ? 'Extract the Style DNA of this image. Style only — the content will be replaced by other scenes.'
+    : 'Deconstruct this image into a full replication prompt, Style DNA first.'
   const out = await callLLM(settings, {
     system: DNA_SYSTEM(mode),
-    user: mode === 'style'
-      ? 'Extract the Style DNA of this image. Style only — the content will be replaced by other scenes.'
-      : 'Deconstruct this image into a full replication prompt, Style DNA first.',
+    user: measurements ? `${base}\n\n${measurements}` : base,
+    maxTokens: 1600,
+    image,
+  })
+  const parsed = textToSections(out)
+  if (!parsed.length) throw new Error('PARSE_ERROR')
+  const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
+  return parsed.filter((s) => !banned.includes(s.name))
+}
+
+// Pasada de autocrítica: compara el borrador contra la imagen y las
+// mediciones, corrige omisiones, exageraciones y contradicciones.
+export async function critiqueStyleDNA({ settings, image, draft, mode = 'style', measurements = '' }) {
+  const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
+  const out = await callLLM(settings, {
+    system: DNA_SYSTEM(mode) + `
+
+VERIFICATION MODE: you receive a DRAFT prompt produced from this same image. Your job now is forensic quality control:
+1. Silently compare the draft against the image (and the measured ground truth if present).
+2. Find OMISSIONS (visible traits the draft missed), EXAGGERATIONS (adjectives stronger than what the image shows — the most common failure), and CONTRADICTIONS (claims that violate the image, the measurements, or the draft's own Style DNA).
+3. Output the CORRECTED full prompt in the exact same section format — nothing else. Keep what the draft got right; fix only what fails. Calibrate every intensity word against the measurements.`,
+    user: `DRAFT TO VERIFY:\n${draftText}${measurements ? `\n\n${measurements}` : ''}`,
     maxTokens: 1600,
     image,
   })
