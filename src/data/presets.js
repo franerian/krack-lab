@@ -333,6 +333,27 @@ export const PRESET_GROUPS = [
       p('Clean Output', 'Negative', 'avoid: watermarks, text artifacts, borders, signature, low resolution, jpeg artifacts, mutated anatomy'),
     ],
   },
+  // ──────────────────── RENDERED & STYLIZED (no-foto) ──────────────────────
+  {
+    id: 'rendered-stylized', label: 'Rendered & Stylized', category: 'PHOTO STYLES',
+    presets: [
+      p('Low-Poly Game Render', 'Style', 'stylized low-poly 3D game render: flat-shaded polygonal facets, simplified silhouettes, painted volumetric fog, no photographic grain, flat color fields'),
+      p('PS1 Era Real-Time', 'Style', 'PS1-era real-time 3D: chunky low-resolution textures, vertex wobble, affine texture warping, dithered gradients, fog culling in the distance'),
+      p('PS2 Survival Horror', 'Style', 'PS2-era survival-horror render: pre-baked shadows, muddy low-res textures, fixed-camera dread, limited color depth, hard fog falloff'),
+      p('Pixar / DreamWorks', 'Style', 'Pixar-style 3D animation: soft global illumination, rounded appealing forms, subsurface skin glow, clean bounce light, no grain'),
+      p('Clay / Stop-Motion', 'Style', 'stop-motion claymation look: fingerprinted matte clay surfaces, handcrafted imperfection, shallow tactile miniature set, visible seams'),
+      p('Cel-Shaded Anime', 'Style', 'cel-shaded anime render: hard two-tone shadow banding, crisp ink outlines, flat color fills, painted sky gradients, no photographic texture'),
+      p('Ghibli Painterly', 'Style', 'Ghibli-adjacent hand-painted animation: soft gouache backgrounds, gentle color harmony, painted clouds, warm nostalgic light, visible brush texture'),
+      p('Matte Painting', 'Style', 'digital matte painting / concept art: painterly brushwork, atmospheric layering, cinematic scale, blended edges, no camera sensor artifacts'),
+      p('Comic / Ink', 'Style', 'inked comic-book art: bold black linework, halftone shading, flat spot colors, dramatic screentones, graphic-novel panel energy'),
+      p('Watercolor', 'Style', 'watercolor illustration: bleeding pigment edges, paper tooth texture, translucent washes, soft undefined boundaries'),
+      p('Risograph Print', 'Style', 'risograph print look: 2-3 spot inks, visible misregistration, grainy halftone dither, limited flat palette, tactile paper texture'),
+      p('Vector Flat', 'Style', 'flat vector illustration: crisp geometric shapes, solid color fills, zero gradients or texture, bold minimal design'),
+      p('Pixel Art', 'Style', 'pixel art: visible pixel grid, limited palette, dithered shading, deliberate low resolution, retro game aesthetic'),
+      p('Voxel Art', 'Style', 'voxel 3D art: everything built from cubes, blocky Minecraft-adjacent forms, flat-shaded voxels, isometric clarity'),
+      p('Cinematic 3D (Photoreal CGI)', 'Style', 'photoreal cinematic CGI: ray-traced global illumination, physically-based materials, rendered depth of field, film-grade but computer-generated'),
+    ],
+  },
 ]
 
 // ── Plantillas multi-sección (arranques rápidos de escena completa) ──

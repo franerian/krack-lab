@@ -87,12 +87,17 @@ export async function florenceGrounding(dataUrl, onProgress) {
 }
 
 // Bloque de texto para inyectar al prompt del extractor.
-export function groundingToText(g) {
+// En modo 'style' se OMITE el caption narrativo: Florence-2 es un captioner
+// sesgado a fotorrealismo y describe la escena como si fuera una foto, lo que
+// contamina la identificación del medio (ver hallazgo del 2026-07-02). Solo se
+// pasan datos geométricos (grilla) y OCR, con la advertencia de que describen
+// CONTENIDO, no el medio.
+export function groundingToText(g, mode = 'replica') {
   if (!g) return ''
   const lines = [
-    'OBJECTIVE VISUAL INVENTORY (produced by a specialized grounding model — factual evidence of WHAT is where; use it for composition, framing and completeness. In STYLE ONLY mode, use it to reason but never name these objects in your output):',
+    'OBJECTIVE VISUAL INVENTORY (a grounding model located WHAT is where — literal content only, phrased as if photographed. Use it for composition/framing/completeness. It is NOT evidence about the artistic medium; never let it push you toward "photography". In STYLE ONLY mode, reason with it but never name these objects in your output):',
   ]
-  if (g.caption) lines.push(`- Detailed caption: ${g.caption}`)
+  if (mode !== 'style' && g.caption) lines.push(`- Detailed caption: ${g.caption}`)
   const cellLines = Object.entries(g.cells).map(
     ([cell, items]) => `  · ${cell}: ${items.join('; ')}`
   )

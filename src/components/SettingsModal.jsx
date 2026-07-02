@@ -126,6 +126,9 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
                   ● Conectado — {ollamaModels.length} modelo{ollamaModels.length !== 1 && 's'} detectado{ollamaModels.length !== 1 && 's'}.
                   100% local y gratis. Los modelos chicos siguen el formato un poco peor que
                   Claude, pero para Beautify / Smart Edit / Fill funcionan bien.
+                  {' '}Para el <b>Style DNA Lab</b> conviene un modelo de visión con buen
+                  ojo para el medio (foto vs render/ilustración): probá{' '}
+                  <code>qwen2.5vl</code> (<code>ollama pull qwen2.5vl</code>).
                 </p>
               )}
               {ollamaState === 'cors' && (

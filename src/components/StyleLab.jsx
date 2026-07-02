@@ -75,7 +75,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
             }
           })
           setGrounding(g)
-          measurements = [measurements, groundingToText(g)].filter(Boolean).join('\n\n')
+          measurements = [measurements, groundingToText(g, mode)].filter(Boolean).join('\n\n')
         } catch (e) {
           toast('Florence-2 no disponible (sigo sin inventario): ' + e.message, 'error')
         }

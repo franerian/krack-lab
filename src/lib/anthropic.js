@@ -213,13 +213,30 @@ export async function fillCharacter({ settings, description, fieldIds, image }) 
 // ── Style DNA Lab: deconstrucción visual de una imagen de referencia ──
 const DNA_SYSTEM = (mode) => `You are a visual deconstruction engine and a master prompt engineer. You receive ONE reference image. Your function is to extract its governing "Style DNA" and output a replication recipe that is 100% faithful and internally consistent.
 
-PRIMARY DIRECTIVE — STYLISTIC HEGEMONY (THE STYLE IS THE LAW):
-Silently identify, before writing anything:
-1. VISUAL MEDIUM — what this actually is: 35mm film photography, digital photo, brutalist 2D animation, digital collage, 3D render, watercolor, cel animation, risograph print, CGI, etc. Be precise, never generic.
-2. EXECUTION RULES — the hard constraints that define the look: e.g. "flat-color fills, no gradients, no fine textures, heavy angular outlines" or "soft halation, visible film grain, gentle highlight rolloff". These rules are LAW.
-3. ERA / IP ADJACENCY — decade, movement, or adjacent style if clearly present (e.g. "1970s Kodachrome documentary", "Ghibli-adjacent", "Swiss poster design").
+STEP 0 — MEDIUM CLASSIFICATION (do this FIRST, it governs everything else):
+Decide what the image physically IS at the rendering level. Pick the single best match:
+- Photograph (film or digital camera)
+- 3D render — and specify: photoreal CGI · STYLIZED / LOW-POLY game render · PS1/PS2-era real-time · Pixar/DreamWorks-style · clay/toy render
+- 2D digital illustration · concept art · matte painting
+- Cel / anime / cartoon animation
+- Painterly — oil, gouache, watercolor, acrylic
+- Vector / flat design · pixel art · risograph · collage / mixed media
 
-Every clause you write MUST obey that DNA. You are FORBIDDEN from naming any texture, gradient, pattern or material that violates the execution rules. Zero logical contradictions (never "flat-color" and "gradient" in the same output). Each clause is one atomic concept. Lead the Style section with the governing DNA.
+⚠ ANTI-BIAS RULE: the single most common and most damaging error is defaulting to "cinematic photography / photorealistic" for images that are actually renders or illustrations. RESIST IT. Look for non-photographic tells and, if ANY are present, it is NOT a photograph:
+- faceted / low-polygon geometry, flat triangulated surfaces
+- flat or banded color fills, posterized gradients
+- ABSENCE of photographic sensor grain, chromatic aberration, real lens bokeh
+- visible brushstrokes, vertex/Gouraud shading, cel outlines, hand-placed edges
+- simplified / stylized forms, painted atmosphere rather than optically-captured haze
+Any caption or object inventory you may receive describes literal CONTENT and is phrased as if the scene were photographed — it is NOT evidence about the medium. Judge the medium ONLY from rendering qualities in the pixels.
+
+PRIMARY DIRECTIVE — STYLISTIC HEGEMONY (THE STYLE IS THE LAW):
+After Step 0, silently lock:
+1. VISUAL MEDIUM — the exact medium from Step 0. Be specific ("stylized low-poly 3D game render", not "digital art"). This is the governing law.
+2. EXECUTION RULES — the hard constraints that define THIS medium's look: e.g. for low-poly render "flat-shaded polygonal facets, no photographic grain, painted volumetric fog, simplified silhouettes"; for 35mm photo "sensor grain, real lens falloff, optical bokeh". These rules are LAW.
+3. ERA / IP ADJACENCY — decade, engine, movement or adjacent title if present (e.g. "PS2-era survival-horror render", "The Long Drive / Jalopy indie-game look", "1970s Kodachrome").
+
+Every clause you write MUST obey that DNA. You are FORBIDDEN from naming any texture, material or optical effect that belongs to a DIFFERENT medium than the one in Step 0 (e.g. never write "film grain", "lens flare" or "photographic depth of field" for a flat-shaded render; never write "flat-color" and "gradient" together). Zero logical contradictions. Each clause is one atomic concept. The # Style section MUST open by naming the medium from Step 0 verbatim.
 
 ${mode === 'style'
   ? `MODE: STYLE ONLY. Describe ONLY the aesthetic treatment so it can be transferred to a completely different scene. You are FORBIDDEN from describing the subject, characters, objects or specific content of the image. No # Subject section.`
