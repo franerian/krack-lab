@@ -6,6 +6,10 @@ import { measureImage, extractFileMetadata, measurementsToText } from '../lib/im
 import { florenceGrounding, groundingToText } from '../lib/florence.js'
 import { highlightHtml } from '../lib/highlight.js'
 import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
+import { addRun, getRuns, clearRuns, runToMarkdown, allRunsToMarkdown } from '../lib/dnaLog.js'
+
+const nowIso = () => new Date().toISOString().replace('T', ' ').slice(0, 19)
+const modelLabel = (s) => (s.provider === 'ollama' ? s.ollamaModel : s.model)
 
 export default function StyleLab({ settings, onApply, onReplace, onSavePreset, onClose, toast, target, setTarget, ar, setAr }) {
   const [img, setImg] = useState(null)
@@ -30,6 +34,9 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   const [version, setVersion] = useState(1)
   const [history, setHistory] = useState([])
   const genRef = useRef(null)
+  // Log para iterar sobre la calidad del ADN
+  const [showLog, setShowLog] = useState(false)
+  const [runCount, setRunCount] = useState(() => getRuns().length)
 
   const loadFile = async (file) => {
     try {
@@ -74,21 +81,39 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
         }
         setDeepStatus('')
       }
+      const passes = []
       setPass(1)
-      let sections = await analyzeImageStyle({ settings, image: img, mode, measurements })
+      let r = await analyzeImageStyle({ settings, image: img, mode, measurements })
+      passes.push(r.trace)
+      let sections = r.sections
       if (verify) {
         setPass(2)
         setResult(sections) // muestra el borrador mientras verifica
-        sections = await critiqueStyleDNA({ settings, image: img, draft: sections, mode, measurements })
+        r = await critiqueStyleDNA({ settings, image: img, draft: sections, mode, measurements })
+        passes.push(r.trace)
+        sections = r.sections
       }
       setResult(sections)
+      logRun({ passes, measurements, final: sections })
       toast(verify ? 'ADN extraído y verificado ✓' : 'ADN visual extraído ✓', 'ok')
     } catch (e) {
+      if (e.trace) logRun({ passes: [e.trace], measurements, final: null, error: e.message })
       toast('Error al analizar: ' + e.message, 'error')
     } finally {
       setBusy(false)
       setPass(0)
     }
+  }
+
+  // Guarda una corrida completa (inputs + prompts exactos + salida cruda).
+  const logRun = ({ passes, measurements, final, error }) => {
+    addRun({
+      ts: nowIso(), mode, provider: settings.provider, model: modelLabel(settings),
+      verify, deep, measurements,
+      grounding: grounding ? { caption: grounding.caption, cells: grounding.cells, ocr: grounding.ocr } : null,
+      passes, final, error,
+    })
+    setRunCount(getRuns().length)
   }
 
   const toObj = () => Object.fromEntries(result.map((s) => [s.name, s.text]))
@@ -138,17 +163,19 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     if (!genImg || !result) return
     if (!isReady(settings)) return toast(providerHint(settings), 'error')
     setRefining(true)
+    const comparisonData = comparisonText()
     try {
-      const corrected = await refineFromComparison({
-        settings, original: img, generated: genImg, draft: result, mode,
-        comparisonData: comparisonText(),
+      const r = await refineFromComparison({
+        settings, original: img, generated: genImg, draft: result, mode, comparisonData,
       })
-      setResult(corrected)
+      setResult(r.sections)
       setVersion((v) => v + 1)
       setGenImg(null)
       setClipScore(null)
+      logRun({ passes: [r.trace], measurements: comparisonData, final: r.sections })
       toast(`Prompt corregido → v${version + 1}. Generá de nuevo y traé el resultado.`, 'ok')
     } catch (e) {
+      if (e.trace) logRun({ passes: [e.trace], measurements: comparisonData, final: null, error: e.message })
       toast('Error al refinar: ' + e.message, 'error')
     } finally {
       setRefining(false)
@@ -188,8 +215,20 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
               title="Reconstruye también el sujeto y la escena"
             >Réplica completa</button>
           </div>
+          <button
+            className="btn small"
+            title="Ver el log de corridas (prompts exactos y salida cruda) para iterar la calidad"
+            onClick={() => setShowLog(true)}
+          >🐞 Log{runCount ? ` (${runCount})` : ''}</button>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
+        {showLog && (
+          <LogViewer
+            onClose={() => setShowLog(false)}
+            onCleared={() => setRunCount(0)}
+            toast={toast}
+          />
+        )}
         <div className="modal-body sl-body">
           <div className="sl-left">
             <div
@@ -363,6 +402,73 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
           >Aplicar al prompt →</button>
         </div>
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => loadFile(e.target.files[0])} />
+      </div>
+    </div>
+  )
+}
+
+// Visor del log de corridas: prompt exacto + salida cruda de cada pasada,
+// para copiar/descargar e iterar sobre la calidad del ADN.
+function LogViewer({ onClose, onCleared, toast }) {
+  const [runs, setRuns] = useState(() => getRuns())
+  const [sel, setSel] = useState(0)
+  const run = runs[sel]
+
+  const copyOne = () => {
+    navigator.clipboard.writeText(runToMarkdown(run))
+    toast('Run copiado (markdown)', 'ok')
+  }
+  const copyAll = () => {
+    navigator.clipboard.writeText(allRunsToMarkdown(runs))
+    toast(`${runs.length} runs copiados`, 'ok')
+  }
+  const download = () => {
+    const blob = new Blob([JSON.stringify(runs, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = 'dna-lab-log.json'
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+  const clear = () => {
+    if (!window.confirm('¿Borrar todo el log de corridas?')) return
+    clearRuns(); setRuns([]); onCleared(); toast('Log borrado', 'ok')
+  }
+
+  return (
+    <div className="overlay" style={{ zIndex: 60 }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-head">
+          <div className="modal-title">🐞 DNA Lab <span className="accent">Log</span></div>
+          <div style={{ flex: 1 }} />
+          <button className="btn small" onClick={copyOne} disabled={!run}>⧉ Copiar run</button>
+          <button className="btn small" onClick={copyAll} disabled={!runs.length}>⧉ Copiar todos</button>
+          <button className="btn small" onClick={download} disabled={!runs.length}>⭳ JSON</button>
+          <button className="btn small ghost" onClick={clear} disabled={!runs.length}>Limpiar</button>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 14 }}>
+          <div className="log-list">
+            {!runs.length && <div className="sl-placeholder">Sin corridas aún.</div>}
+            {runs.map((r, i) => (
+              <button
+                key={i}
+                className={'log-item' + (i === sel ? ' active' : '')}
+                onClick={() => setSel(i)}
+              >
+                <div className="log-item-ts">{r.ts.slice(11)} · {r.mode === 'style' ? 'ADN' : 'réplica'}</div>
+                <div className="log-item-sub">
+                  {r.model} · {r.passes.length}p{r.error ? ' · ⚠' : ''}
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="log-detail">
+            {run ? (
+              <pre className="export-pre" style={{ maxHeight: '60vh' }}>{runToMarkdown(run)}</pre>
+            ) : <div className="sl-placeholder">Elegí una corrida.</div>}
+          </div>
+        </div>
       </div>
     </div>
   )

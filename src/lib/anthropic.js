@@ -256,16 +256,15 @@ export async function analyzeImageStyle({ settings, image, mode = 'style', measu
   const base = mode === 'style'
     ? 'Extract the Style DNA of this image. Style only — the content will be replaced by other scenes.'
     : 'Deconstruct this image into a full replication prompt, Style DNA first.'
-  const out = await callLLM(settings, {
-    system: DNA_SYSTEM(mode),
-    user: measurements ? `${base}\n\n${measurements}` : base,
-    maxTokens: 1600,
-    image,
-  })
+  const system = DNA_SYSTEM(mode)
+  const user = measurements ? `${base}\n\n${measurements}` : base
+  const out = await callLLM(settings, { system, user, maxTokens: 1600, image })
   const parsed = textToSections(out)
-  if (!parsed.length) throw new Error('PARSE_ERROR')
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
-  return parsed.filter((s) => !banned.includes(s.name))
+  const sections = parsed.filter((s) => !banned.includes(s.name))
+  const trace = { pass: 'extract', system, user, raw: out }
+  if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
+  return { sections, trace }
 }
 
 // Pasada de autocrítica: compara el borrador contra la imagen y las
@@ -275,40 +274,38 @@ export async function analyzeImageStyle({ settings, image, mode = 'style', measu
 // el objetivo; nunca se persiguen los artefactos de la generación.
 export async function refineFromComparison({ settings, original, generated, draft, mode = 'style', comparisonData = '' }) {
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
-  const out = await callLLM(settings, {
-    system: DNA_SYSTEM(mode) + `
+  const system = DNA_SYSTEM(mode) + `
 
 PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference — the absolute target. The SECOND is an AI GENERATION produced from the CURRENT PROMPT. You are the error-correction system of a photocopier: you do not judge beauty, you measure drift and correct it.
 1. Silently diff the generation against the original: what did it LOSE (elements, texture, light behavior), what did it ADD that isn't in the original, what did it EXAGGERATE or UNDERSHOOT (contrast, saturation, mood intensity, scale)?
 2. If OBJECTIVE COMPARISON DATA is provided, treat it as measured fact and compensate explicitly (e.g. generation more saturated than original → lower the saturation wording).
-3. Output the CORRECTED full prompt in the exact same section format — nothing else. Strengthen constraints where the generation drifted, add what it lost, remove or soften what it over-produced. Never describe the generation; describe what the NEXT generation must do to match the ORIGINAL.`,
-    user: `CURRENT PROMPT (the one that produced the second image):\n${draftText}${comparisonData ? `\n\n${comparisonData}` : ''}\n\nFirst image = ORIGINAL reference (target). Second image = generation to correct. Output the corrected prompt.`,
-    maxTokens: 1600,
-    images: [original, generated],
-  })
+3. Output the CORRECTED full prompt in the exact same section format — nothing else. Strengthen constraints where the generation drifted, add what it lost, remove or soften what it over-produced. Never describe the generation; describe what the NEXT generation must do to match the ORIGINAL.`
+  const user = `CURRENT PROMPT (the one that produced the second image):\n${draftText}${comparisonData ? `\n\n${comparisonData}` : ''}\n\nFirst image = ORIGINAL reference (target). Second image = generation to correct. Output the corrected prompt.`
+  const out = await callLLM(settings, { system, user, maxTokens: 1600, images: [original, generated] })
   const parsed = textToSections(out)
-  if (!parsed.length) throw new Error('PARSE_ERROR')
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
-  return parsed.filter((s) => !banned.includes(s.name))
+  const sections = parsed.filter((s) => !banned.includes(s.name))
+  const trace = { pass: 'refine', system, user, raw: out }
+  if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
+  return { sections, trace }
 }
 
 export async function critiqueStyleDNA({ settings, image, draft, mode = 'style', measurements = '' }) {
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
-  const out = await callLLM(settings, {
-    system: DNA_SYSTEM(mode) + `
+  const system = DNA_SYSTEM(mode) + `
 
 VERIFICATION MODE: you receive a DRAFT prompt produced from this same image. Your job now is forensic quality control:
 1. Silently compare the draft against the image (and the measured ground truth if present).
 2. Find OMISSIONS (visible traits the draft missed), EXAGGERATIONS (adjectives stronger than what the image shows — the most common failure), and CONTRADICTIONS (claims that violate the image, the measurements, or the draft's own Style DNA).
-3. Output the CORRECTED full prompt in the exact same section format — nothing else. Keep what the draft got right; fix only what fails. Calibrate every intensity word against the measurements.`,
-    user: `DRAFT TO VERIFY:\n${draftText}${measurements ? `\n\n${measurements}` : ''}`,
-    maxTokens: 1600,
-    image,
-  })
+3. Output the CORRECTED full prompt in the exact same section format — nothing else. Keep what the draft got right; fix only what fails. Calibrate every intensity word against the measurements.`
+  const user = `DRAFT TO VERIFY:\n${draftText}${measurements ? `\n\n${measurements}` : ''}`
+  const out = await callLLM(settings, { system, user, maxTokens: 1600, image })
   const parsed = textToSections(out)
-  if (!parsed.length) throw new Error('PARSE_ERROR')
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
-  return parsed.filter((s) => !banned.includes(s.name))
+  const sections = parsed.filter((s) => !banned.includes(s.name))
+  const trace = { pass: 'critique', system, user, raw: out }
+  if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
+  return { sections, trace }
 }
 
 export async function generateCoverage({ settings, coverage, sections }) {

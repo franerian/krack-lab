@@ -462,6 +462,19 @@ mark.preset-mark span { background: transparent; }
 .score-badge.bad { color: #fca5a5; border-color: #7f1d1d; }
 .score-history { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
 
+/* ───────── Visor de log del DNA Lab ───────── */
+.log-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; max-height: 60vh; }
+.log-item {
+  text-align: left; background: none; border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; cursor: pointer; color: var(--text-dim);
+  transition: all 0.12s;
+}
+.log-item:hover { border-color: var(--border-strong); color: var(--text); }
+.log-item.active { border-color: var(--accent); background: rgba(249, 115, 22, 0.08); }
+.log-item-ts { font: 600 12px var(--font-mono); }
+.log-item-sub { font-size: 10.5px; color: var(--text-faint); margin-top: 2px; }
+.log-detail { overflow: hidden; }
+
 /* ───────── Character Studio foto ───────── */
 .cs-photo {
   width: 40px; height: 40px; flex: none; border-radius: 8px; cursor: pointer;
