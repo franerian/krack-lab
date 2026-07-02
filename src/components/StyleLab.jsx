@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react'
 import { analyzeImageStyle, critiqueStyleDNA, isReady, providerHint } from '../lib/anthropic.js'
 import { fileToImage } from '../lib/image.js'
 import { measureImage, extractFileMetadata, measurementsToText } from '../lib/imageAnalysis.js'
+import { florenceGrounding, groundingToText } from '../lib/florence.js'
 import { highlightHtml } from '../lib/highlight.js'
 import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
 
@@ -9,8 +10,11 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   const [img, setImg] = useState(null)
   const [mode, setMode] = useState('style')
   const [busy, setBusy] = useState(false)
-  const [pass, setPass] = useState(0) // 0 = idle, 1 = extracción, 2 = autocrítica
+  const [pass, setPass] = useState(0) // 0 idle | 'florence' | 1 extracción | 2 autocrítica
   const [verify, setVerify] = useState(true)
+  const [deep, setDeep] = useState(false)
+  const [deepStatus, setDeepStatus] = useState('')
+  const [grounding, setGrounding] = useState(null)
   const [result, setResult] = useState(null)
   const [metrics, setMetrics] = useState(null)
   const [meta, setMeta] = useState(null)
@@ -22,6 +26,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
       const loaded = await fileToImage(file)
       setImg(loaded)
       setResult(null)
+      setGrounding(null)
       // Mediciones objetivas: paleta, contraste, saturación, AR + metadata
       // embebida (EXIF / prompt de generadores IA). Instantáneo, sin IA.
       setMetrics(await measureImage(loaded.dataUrl).catch(() => null))
@@ -35,8 +40,26 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     if (!img) return toast('Cargá primero una imagen de referencia', 'error')
     if (!isReady(settings)) return toast(providerHint(settings), 'error')
     setBusy(true)
-    const measurements = measurementsToText(metrics, meta)
+    let measurements = measurementsToText(metrics, meta)
     try {
+      if (deep) {
+        // Pasada Florence-2: inventario objetivo por regiones + OCR, en el navegador.
+        setPass('florence')
+        try {
+          const g = await florenceGrounding(img.dataUrl, (p) => {
+            if (p.status === 'progress' && p.file?.endsWith('.onnx')) {
+              setDeepStatus(`Descargando Florence-2… ${Math.round(p.progress || 0)}%`)
+            } else if (p.status === 'done') {
+              setDeepStatus('Analizando regiones…')
+            }
+          })
+          setGrounding(g)
+          measurements = [measurements, groundingToText(g)].filter(Boolean).join('\n\n')
+        } catch (e) {
+          toast('Florence-2 no disponible (sigo sin inventario): ' + e.message, 'error')
+        }
+        setDeepStatus('')
+      }
       setPass(1)
       let sections = await analyzeImageStyle({ settings, image: img, mode, measurements })
       if (verify) {
@@ -138,12 +161,24 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
               <input type="checkbox" checked={verify} onChange={(e) => setVerify(e.target.checked)} />
               Autocrítica (2ª pasada anti-exageración)
             </label>
+            <label className="verify-toggle" title="Corre Florence-2 en tu navegador para un inventario objetivo por regiones + OCR. Descarga ~230 MB la primera vez (queda cacheado).">
+              <input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} />
+              Análisis profundo (Florence-2 local, ~230 MB la 1ª vez)
+            </label>
             <button className="btn primary" style={{ width: '100%' }} onClick={analyze} disabled={busy || !img}>
               {busy ? <span className="spinner" /> : '🧬 '}
               {busy
-                ? (pass === 2 ? 'Verificando fidelidad… (2/2)' : `Extrayendo ADN… (1/${verify ? 2 : 1})`)
+                ? (pass === 'florence'
+                    ? (deepStatus || 'Leyendo la imagen (Florence-2)…')
+                    : pass === 2 ? 'Verificando fidelidad… (2/2)' : `Extrayendo ADN… (1/${verify ? 2 : 1})`)
                 : 'Extraer ADN visual'}
             </button>
+            {grounding && (
+              <div className="grounding-info" title={groundingToText(grounding)}>
+                🔎 Florence-2: {grounding.regionCount} regiones inventariadas
+                {grounding.ocr ? ' · texto detectado' : ''} — «{grounding.caption.slice(0, 90)}…»
+              </div>
+            )}
             <p className="hint">
               {mode === 'style'
                 ? 'Extrae medio, reglas de ejecución, cámara, luz, color y mood — sin el sujeto. Las mediciones de arriba se le imponen a la IA como hechos.'
