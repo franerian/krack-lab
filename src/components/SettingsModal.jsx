@@ -8,23 +8,36 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
   const [ollamaUrl, setOllamaUrl] = useState(settings.ollamaUrl || OLLAMA_DEFAULT_URL)
   const [ollamaModel, setOllamaModel] = useState(settings.ollamaModel || '')
   const [ollamaModels, setOllamaModels] = useState([])
-  const [ollamaError, setOllamaError] = useState('')
+  // 'checking' | 'ok' | 'cors' (corre pero bloquea este origen) | 'down'
+  const [ollamaState, setOllamaState] = useState('checking')
   const [testing, setTesting] = useState(false)
 
-  // Detecta los modelos instalados en Ollama al abrir o cambiar la URL.
+  // Diagnóstico de conexión: distingue "no corre" de "corre pero CORS bloquea".
+  const diagnose = async (url) => {
+    setOllamaState('checking')
+    try {
+      const models = await listOllamaModels(url)
+      setOllamaModels(models)
+      setOllamaModel((cur) => (models.length && !models.includes(cur) ? models[0] : cur))
+      setOllamaState('ok')
+    } catch {
+      try {
+        // no-cors: si resuelve (respuesta opaca), el servidor está vivo
+        // y el problema es que Ollama no permite este origen.
+        await fetch((url || OLLAMA_DEFAULT_URL).replace(/\/$/, '') + '/', { mode: 'no-cors' })
+        setOllamaState('cors')
+      } catch {
+        setOllamaState('down')
+      }
+    }
+  }
+
   useEffect(() => {
     if (provider !== 'ollama') return
-    let cancelled = false
-    setOllamaError('')
-    listOllamaModels(ollamaUrl)
-      .then((models) => {
-        if (cancelled) return
-        setOllamaModels(models)
-        if (models.length && !models.includes(ollamaModel)) setOllamaModel(models[0])
-      })
-      .catch(() => !cancelled && setOllamaError('No se pudo conectar con Ollama en esa URL. ¿Está corriendo `ollama serve`?'))
-    return () => { cancelled = true }
+    diagnose(ollamaUrl)
   }, [provider, ollamaUrl]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const originCmd = `launchctl setenv OLLAMA_ORIGINS "${window.location.origin}" && killall Ollama && open -a Ollama`
 
   const current = { provider, apiKey: apiKey.trim(), model, ollamaUrl: ollamaUrl.trim(), ollamaModel }
 
@@ -104,13 +117,49 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
                   {ollamaModels.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
-              {ollamaError
-                ? <p className="hint" style={{ color: '#fca5a5' }}>{ollamaError}</p>
-                : <p className="hint">
-                    100% local y gratis. Corre contra tu Ollama (<code>{ollamaModels.length}</code> modelos
-                    detectados). Los modelos chicos siguen el formato un poco peor que Claude,
-                    pero para Beautify / Smart Edit / Fill funcionan bien.
-                  </p>}
+
+              {ollamaState === 'checking' && (
+                <p className="hint"><span className="spinner" />Buscando Ollama en {ollamaUrl || OLLAMA_DEFAULT_URL}…</p>
+              )}
+              {ollamaState === 'ok' && (
+                <p className="hint" style={{ color: '#86efac' }}>
+                  ● Conectado — {ollamaModels.length} modelo{ollamaModels.length !== 1 && 's'} detectado{ollamaModels.length !== 1 && 's'}.
+                  100% local y gratis. Los modelos chicos siguen el formato un poco peor que
+                  Claude, pero para Beautify / Smart Edit / Fill funcionan bien.
+                </p>
+              )}
+              {ollamaState === 'cors' && (
+                <div className="ollama-diag">
+                  <p className="hint" style={{ color: '#fdba74' }}>
+                    ⚠ Ollama <b>está corriendo</b>, pero no permite peticiones desde{' '}
+                    <code>{window.location.origin}</code>. Autorizá este origen corriendo esto
+                    una vez en la Terminal de la Mac donde está Ollama:
+                  </p>
+                  <div className="cmd-box">
+                    <code>{originCmd}</code>
+                    <button
+                      className="btn small"
+                      onClick={() => { navigator.clipboard.writeText(originCmd); toast('Comando copiado', 'ok') }}
+                    >⧉</button>
+                  </div>
+                  <p className="hint">
+                    (El navegador no puede hacer esto por vos: las páginas web no tienen permiso
+                    para configurar apps del sistema.) Después tocá Reintentar.
+                  </p>
+                </div>
+              )}
+              {ollamaState === 'down' && (
+                <p className="hint" style={{ color: '#fca5a5' }}>
+                  ✕ No se detecta Ollama en <code>{ollamaUrl || OLLAMA_DEFAULT_URL}</code>.
+                  Abrí la app Ollama (o corré <code>ollama serve</code>) en esta máquina y tocá Reintentar.
+                  Si no tenés Ollama, usá el proveedor Claude (API).
+                </p>
+              )}
+              {ollamaState !== 'ok' && ollamaState !== 'checking' && (
+                <button className="btn small" style={{ alignSelf: 'flex-start' }} onClick={() => diagnose(ollamaUrl)}>
+                  ↻ Reintentar conexión
+                </button>
+              )}
             </>
           )}
         </div>
