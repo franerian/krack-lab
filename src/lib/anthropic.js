@@ -113,11 +113,20 @@ export function sectionsToText(sections) {
 }
 
 export function textToSections(text) {
+  // Normaliza las derivas de formato típicas de modelos chicos antes de
+  // parsear: fences de markdown, "## Style", "**Style**", "# Style:".
+  const normalized = text
+    .replace(/```[a-z]*\n?/gi, '')
+    .replace(/^\s*\*{1,2}#?\s*([A-Za-z][A-Za-z /&]{1,24})\*{1,2}\s*:?\s*$/gm, '# $1')
+    .replace(/^#{2,6}\s*/gm, '# ')
+    .replace(/^(#\s*[^\n:]+):\s*$/gm, '$1')
   const out = []
   const re = /^#\s*([^\n]+)\n([\s\S]*?)(?=^#\s|\s*$(?![\s\S]))/gm
   let m
-  while ((m = re.exec(text)) !== null) {
-    out.push({ name: m[1].trim(), text: m[2].trim() })
+  while ((m = re.exec(normalized)) !== null) {
+    const name = m[1].trim()
+    const body = m[2].trim()
+    if (name && body) out.push({ name, text: body })
   }
   return out
 }

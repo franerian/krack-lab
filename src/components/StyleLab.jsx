@@ -64,10 +64,12 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     let measurements = measurementsToText(metrics, meta)
     try {
       if (deep) {
-        // Pasada Florence-2: inventario objetivo por regiones + OCR, en el navegador.
+        // Pasada Florence-2: inventario objetivo por regiones + OCR, en el
+        // navegador. Si ya se analizó esta misma imagen (ej. reintento tras
+        // un parse error), se reutiliza — grounding se resetea al cargar otra.
         setPass('florence')
         try {
-          const g = await florenceGrounding(img.dataUrl, (p) => {
+          const g = grounding || await florenceGrounding(img.dataUrl, (p) => {
             if (p.status === 'progress' && p.file?.endsWith('.onnx')) {
               setDeepStatus(`Descargando Florence-2… ${Math.round(p.progress || 0)}%`)
             } else if (p.status === 'done') {
