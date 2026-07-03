@@ -240,7 +240,8 @@ Every clause you write MUST obey that DNA. You are FORBIDDEN from naming any tex
 
 ${mode === 'style'
   ? `MODE: STYLE ONLY. Describe ONLY the aesthetic treatment so it can be transferred to a completely different scene. You are FORBIDDEN from describing the subject, characters, objects or specific content of the image. No # Subject section.`
-  : `MODE: FULL REPLICA. Also reconstruct the scene: include # Subject (and # Action / # Environment if relevant), each described through the lens of the Style DNA.`}
+  : `MODE: FULL REPLICA. Also reconstruct the scene: include # Subject (and # Action / # Environment if relevant), each described through the lens of the Style DNA.
+REPLICA COMPLETENESS — INVENTORY, DON'T INVENT: # Subject must inventory every significant visible object (including easy-to-miss ones: hands, mirrors, wipers, signage, screens). And the reverse is LAW: never add objects, text, signs or details that are NOT in the image — generators invent clutter, so if the image contains no readable text or signage, # Negative MUST include "no text, no signage, no lettering".`}
 
 MANDATORY: the # Camera section MUST state the precise shot type AND camera angle (e.g. "extreme low-angle wide shot"), plus lens character if readable.
 
@@ -249,6 +250,10 @@ MANDATORY — LIGHT SOURCES: the # Lighting section MUST name every VISIBLE ligh
 MANDATORY — ACCENT COLORS: the # Color section must account for EVERY measured dominant hex, including minority accents (a 5-10% warm tone against a muted field is usually the soul of the image — dropping it is a critical failure).
 
 3D-vs-2D TELL: if the image shows true 3D perspective depth with faceted/flat-shaded geometry (even with painted-looking fog or textures), it is a STYLIZED 3D GAME RENDER — not a 2D illustration. Reserve "2D illustration / concept art" for images with no coherent 3D geometry.
+
+MANDATORY — EDGE & FOCUS QUALITY: the Style DNA must state the EDGE CHARACTER of the image (soft/blended/diffuse vs crisp/defined/hard-lined) — getting this wrong changes the entire medium. The # Camera section must state the FOCUS BEHAVIOR: which planes are sharp and which are blurred (e.g. "foreground out of focus, midground readable"). If the image has no hard edges anywhere, the prompt must say so explicitly and # Negative must forbid crisp linework.
+
+MANDATORY — DETAIL ECONOMY: state how much micro-detail the style permits, as an execution rule. A minimal/simplified style must say "sparse, simplified forms, large empty planes — no added clutter, no invented micro-detail"; a dense style must say so too. Generators fill silence with detail — if the original is economical, the prompt must actively forbid extra detail.
 
 CALIBRATED SCALES: when the user message includes MEASURED GROUND TRUTH, those values were computed programmatically from the pixels and are non-negotiable facts. Your wording for contrast, saturation and brightness MUST be consistent with the measured N/10 values (e.g. contrast 3/10 can never be "high contrast"). In # Color, cite the dominant hex values verbatim alongside their color names. If CAMERA EXIF is present, # Camera must be built on it. Express contrast, saturation and brightness as "N/10" ratings inside the prompt so they stay reproducible.
 
