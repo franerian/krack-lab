@@ -96,28 +96,37 @@ export async function callOllama({ url, model, system, user, maxTokens = 2000, i
   if (imgs) userMsg.images = imgs.map((im) => im.base64)
   // Local y sin streaming: los modelos grandes con imágenes tardan minutos.
   return withAbort(600_000, async (signal) => {
-    const res = await fetch(`${base}/api/chat`, {
-      method: 'POST',
-      signal,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        stream: false,
-        messages: [
-          { role: 'system', content: system },
-          userMsg,
-        ],
-        // Margen extra sobre maxTokens: los modelos razonadores (gemma,
-        // qwen…) gastan presupuesto pensando antes de responder y truncaban
-        // la salida a mitad de frase. num_predict es tope, no objetivo.
-        options: { num_predict: maxTokens + 2048, temperature: 0.7 },
-      }),
-    })
-    if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      throw new Error(`Ollama ${res.status}: ${body.slice(0, 300)}`)
+    const doCall = async (numPredict) => {
+      const res = await fetch(`${base}/api/chat`, {
+        method: 'POST',
+        signal,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          stream: false,
+          // Sin razonamiento: los modelos pensantes (gemma, qwen…) gastaban
+          // el presupuesto pensando y truncaban la salida a mitad de frase.
+          // Los modelos sin thinking ignoran el parámetro (verificado).
+          think: false,
+          messages: [
+            { role: 'system', content: system },
+            userMsg,
+          ],
+          options: { num_predict: numPredict, temperature: 0.7 },
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        throw new Error(`Ollama ${res.status}: ${body.slice(0, 300)}`)
+      }
+      return res.json()
     }
-    const data = await res.json()
+    let data = await doCall(maxTokens + 1024)
+    // Cinturón y tiradores: si igual se truncó (done_reason "length"),
+    // un único reintento con presupuesto mucho mayor.
+    if (data.done_reason === 'length') {
+      data = await doCall(maxTokens + 8192)
+    }
     const content = stripThink(data.message?.content || '')
     if (!content && data.message?.thinking) {
       throw new Error('El modelo agotó la respuesta razonando — probá de nuevo o usá un modelo sin razonamiento')

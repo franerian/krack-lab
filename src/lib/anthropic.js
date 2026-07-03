@@ -56,6 +56,18 @@ async function callParsed(settings, req) {
   return { raw, parsed, retried }
 }
 
+// Las pasadas correctivas (autocrítica, loop) reescriben un borrador que ya
+// era válido: si la salida viene incompleta (truncado, secciones omitidas),
+// NUNCA se pierden secciones — lo que falta se conserva del borrador.
+function mergeOverDraft(draft, corrected) {
+  const byName = new Map(corrected.map((s) => [s.name, s]))
+  const merged = draft.map((d) => byName.get(d.name) || d)
+  for (const c of corrected) {
+    if (!draft.some((d) => d.name === c.name)) merged.push(c)
+  }
+  return merged
+}
+
 const SYSTEM_BASE = `You are a prompt engineering assistant inside KRACK, a tool for filmmakers and visual artists writing prompts for AI image/video generators (Midjourney, Sora, Kling, Luma, Krea...).
 
 Prompts are structured in sections with this exact format:
@@ -244,7 +256,7 @@ PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference �
   const user = `CURRENT PROMPT (the one that produced the second image):\n${draftText}${comparisonData ? `\n\n${comparisonData}` : ''}\n\nFirst image = ORIGINAL reference (target). Second image = generation to correct. Output the corrected prompt.`
   const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: [original, generated] })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
-  const sections = parsed.filter((s) => !banned.includes(s.name))
+  const sections = mergeOverDraft(draft, parsed.filter((s) => !banned.includes(s.name)))
   const trace = { pass: 'refine', system, user, raw, retried }
   if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
   return { sections, trace }
@@ -268,7 +280,7 @@ Output the CORRECTED full prompt in the exact same section format — nothing el
   const user = `DRAFT TO VERIFY:\n${draftText}${measurements ? `\n\n${measurements}` : ''}`
   const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, image })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
-  const sections = parsed.filter((s) => !banned.includes(s.name))
+  const sections = mergeOverDraft(draft, parsed.filter((s) => !banned.includes(s.name)))
   const trace = { pass: 'critique', system, user, raw, retried }
   if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
   return { sections, trace }
