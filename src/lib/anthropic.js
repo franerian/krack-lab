@@ -1,108 +1,14 @@
-// Clientes de IA para uso directo desde el navegador: Anthropic (API key del
-// usuario, solo en localStorage) u Ollama local (gratis, sin clave).
+// Prompt-engineering de KRACK: acciones del editor, Character Studio,
+// coberturas y Style DNA Lab. El transporte (clientes, timeouts,
+// cancelación) vive en llm.js; este archivo re-exporta lo usado por la UI.
 
-const API_URL = 'https://api.anthropic.com/v1/messages'
-export const OLLAMA_DEFAULT_URL = 'http://localhost:11434'
+import { callLLM } from './llm.js'
 
-export const MODELS = [
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (recomendado)' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (rápido y barato)' },
-  { id: 'claude-opus-4-8', label: 'Claude Opus 4.8 (máxima calidad)' },
-]
-
-export async function callClaude({ apiKey, model, system, user, maxTokens = 2000, image, images }) {
-  if (!apiKey) throw new Error('NO_API_KEY')
-  const imgs = images || (image ? [image] : null)
-  const content = imgs
-    ? [
-        ...imgs.map((im) => ({
-          type: 'image',
-          source: { type: 'base64', media_type: im.mediaType, data: im.base64 },
-        })),
-        { type: 'text', text: user },
-      ]
-    : user
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: model || 'claude-sonnet-5',
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content }],
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`API ${res.status}: ${body.slice(0, 300)}`)
-  }
-  const data = await res.json()
-  return data.content?.map((b) => b.text || '').join('') || ''
-}
-
-export async function callOllama({ url, model, system, user, maxTokens = 2000, image, images }) {
-  if (!model) throw new Error('NO_OLLAMA_MODEL')
-  const base = (url || OLLAMA_DEFAULT_URL).replace(/\/$/, '')
-  const userMsg = { role: 'user', content: user }
-  const imgs = images || (image ? [image] : null)
-  if (imgs) userMsg.images = imgs.map((im) => im.base64)
-  const res = await fetch(`${base}/api/chat`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      stream: false,
-      messages: [
-        { role: 'system', content: system },
-        userMsg,
-      ],
-      options: { num_predict: maxTokens, temperature: 0.7 },
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`Ollama ${res.status}: ${body.slice(0, 300)}`)
-  }
-  const data = await res.json()
-  return data.message?.content || ''
-}
-
-export async function listOllamaModels(url) {
-  const base = (url || OLLAMA_DEFAULT_URL).replace(/\/$/, '')
-  const res = await fetch(`${base}/api/tags`)
-  if (!res.ok) throw new Error(`Ollama ${res.status}`)
-  const data = await res.json()
-  return (data.models || []).map((m) => m.name)
-}
-
-// Despachador según el proveedor elegido en Ajustes.
-export function callLLM(settings, { system, user, maxTokens, image, images }) {
-  if (settings.provider === 'ollama') {
-    return callOllama({
-      url: settings.ollamaUrl, model: settings.ollamaModel, system, user, maxTokens, image, images,
-    })
-  }
-  return callClaude({
-    apiKey: settings.apiKey, model: settings.model, system, user, maxTokens, image, images,
-  })
-}
-
-// ¿Está el proveedor listo para usarse?
-export function isReady(settings) {
-  if (settings.provider === 'ollama') return !!settings.ollamaModel
-  return !!settings.apiKey
-}
-
-export function providerHint(settings) {
-  return settings.provider === 'ollama'
-    ? 'Elegí un modelo de Ollama en Ajustes'
-    : 'Configurá tu API key (o elegí Ollama local) en Ajustes'
-}
+export {
+  MODELS, OLLAMA_DEFAULT_URL,
+  callClaude, callOllama, callLLM, listOllamaModels,
+  isReady, providerHint, cancelActive, hasActive,
+} from './llm.js'
 
 // ── Formato compartido de prompt estructurado ──
 export function sectionsToText(sections) {
@@ -129,6 +35,25 @@ export function textToSections(text) {
     if (name && body) out.push({ name, text: body })
   }
   return out
+}
+
+// Una llamada que DEBE devolver secciones parseables: si el modelo deriva
+// el formato, reintenta UNA vez con un recordatorio correctivo (los modelos
+// chicos fallan el formato ocasionalmente; sin esto se pierde la corrida).
+const FORMAT_REMINDER = `
+
+FORMAT REMINDER: your previous reply could not be parsed. Respond ONLY with the structured sections — lines starting with "# SectionName" followed by the section text. No preamble, no fences, no commentary.`
+
+async function callParsed(settings, req) {
+  let raw = await callLLM(settings, req)
+  let parsed = textToSections(raw)
+  let retried = false
+  if (!parsed.length) {
+    retried = true
+    raw = await callLLM(settings, { ...req, user: req.user + FORMAT_REMINDER })
+    parsed = textToSections(raw)
+  }
+  return { raw, parsed, retried }
 }
 
 const SYSTEM_BASE = `You are a prompt engineering assistant inside KRACK, a tool for filmmakers and visual artists writing prompts for AI image/video generators (Midjourney, Sora, Kling, Luma, Krea...).
@@ -185,22 +110,20 @@ export const ACTION_LIST = Object.entries(ACTIONS).map(([id, a]) => ({ id, label
 export async function runAction({ settings, actionId, sections }) {
   const text = sectionsToText(sections)
   if (!text.trim()) throw new Error('EMPTY_PROMPT')
-  const out = await callLLM(settings, {
+  const { parsed } = await callParsed(settings, {
     system: SYSTEM_BASE,
     user: ACTIONS[actionId].instruction(text),
   })
-  const parsed = textToSections(out)
   if (!parsed.length) throw new Error('PARSE_ERROR')
   return parsed
 }
 
 export async function runSmartEdit({ settings, instruction, sections }) {
   const text = sectionsToText(sections)
-  const out = await callLLM(settings, {
+  const { parsed } = await callParsed(settings, {
     system: SYSTEM_BASE,
     user: `Apply this instruction to the structured prompt below. Change only what the instruction requires; keep everything else intact.\n\nINSTRUCTION: ${instruction}\n\nPROMPT:\n${text || '(empty — create a new prompt from the instruction)'}`,
   })
-  const parsed = textToSections(out)
   if (!parsed.length) throw new Error('PARSE_ERROR')
   return parsed
 }
@@ -297,11 +220,10 @@ export async function analyzeImageStyle({ settings, image, mode = 'style', measu
     : 'Deconstruct this image into a full replication prompt, Style DNA first.'
   const system = DNA_SYSTEM(mode)
   const user = measurements ? `${base}\n\n${measurements}` : base
-  const out = await callLLM(settings, { system, user, maxTokens: 1600, image })
-  const parsed = textToSections(out)
+  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, image })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
   const sections = parsed.filter((s) => !banned.includes(s.name))
-  const trace = { pass: 'extract', system, user, raw: out }
+  const trace = { pass: 'extract', system, user, raw, retried }
   if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
   return { sections, trace }
 }
@@ -320,11 +242,10 @@ PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference �
 2. If OBJECTIVE COMPARISON DATA is provided, treat it as measured fact and compensate explicitly (e.g. generation more saturated than original → lower the saturation wording).
 3. Output the CORRECTED full prompt in the exact same section format — nothing else. Strengthen constraints where the generation drifted, add what it lost, remove or soften what it over-produced. Never describe the generation; describe what the NEXT generation must do to match the ORIGINAL.`
   const user = `CURRENT PROMPT (the one that produced the second image):\n${draftText}${comparisonData ? `\n\n${comparisonData}` : ''}\n\nFirst image = ORIGINAL reference (target). Second image = generation to correct. Output the corrected prompt.`
-  const out = await callLLM(settings, { system, user, maxTokens: 1600, images: [original, generated] })
-  const parsed = textToSections(out)
+  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: [original, generated] })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
   const sections = parsed.filter((s) => !banned.includes(s.name))
-  const trace = { pass: 'refine', system, user, raw: out }
+  const trace = { pass: 'refine', system, user, raw, retried }
   if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
   return { sections, trace }
 }
@@ -345,11 +266,10 @@ VERIFICATION MODE: you receive a DRAFT prompt produced from this same image. Aud
 9. EXAGGERATIONS & CONTRADICTIONS — any wording stronger than what the image shows, or violating the measurements or the DNA itself.
 Output the CORRECTED full prompt in the exact same section format — nothing else. Keep what the draft got right.`
   const user = `DRAFT TO VERIFY:\n${draftText}${measurements ? `\n\n${measurements}` : ''}`
-  const out = await callLLM(settings, { system, user, maxTokens: 1600, image })
-  const parsed = textToSections(out)
+  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, image })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
   const sections = parsed.filter((s) => !banned.includes(s.name))
-  const trace = { pass: 'critique', system, user, raw: out }
+  const trace = { pass: 'critique', system, user, raw, retried }
   if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
   return { sections, trace }
 }

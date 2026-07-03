@@ -1,4 +1,6 @@
 // Persistencia simple en localStorage con prefijo de app.
+import { useState, useEffect } from 'react'
+
 const PREFIX = 'krack:'
 
 export function load(key, fallback) {
@@ -18,9 +20,9 @@ export function save(key, value) {
   }
 }
 
-export function usePersistedState(React, key, fallback) {
-  const [state, setState] = React.useState(() => load(key, fallback))
-  React.useEffect(() => { save(key, state) }, [key, state])
+export function usePersistedState(key, fallback) {
+  const [state, setState] = useState(() => load(key, fallback))
+  useEffect(() => { save(key, state) }, [key, state])
   return [state, setState]
 }
 

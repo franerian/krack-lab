@@ -10,16 +10,16 @@ import { PRESET_GROUPS } from './data/presets.js'
 
 const ALL_INSERT_PRESETS = PRESET_GROUPS.flatMap((g) => g.presets).filter((p) => p.kind === 'insert')
 import { usePersistedState, uid } from './lib/storage.js'
-import { ACTION_LIST, runAction, runSmartEdit, sectionsToText, isReady, providerHint, OLLAMA_DEFAULT_URL } from './lib/anthropic.js'
+import { ACTION_LIST, runAction, runSmartEdit, sectionsToText, isReady, providerHint, cancelActive, OLLAMA_DEFAULT_URL } from './lib/anthropic.js'
 
 const DEFAULT_SECTIONS = []
 
 export default function App() {
-  const [sections, setSections] = usePersistedState(React, 'sections', DEFAULT_SECTIONS)
-  const [favorites, setFavorites] = usePersistedState(React, 'favorites', [])
-  const [customPresets, setCustomPresets] = usePersistedState(React, 'customPresets', [])
-  const [characters, setCharacters] = usePersistedState(React, 'characters', [])
-  const [settings, setSettings] = usePersistedState(React, 'settings', {
+  const [sections, setSections] = usePersistedState('sections', DEFAULT_SECTIONS)
+  const [favorites, setFavorites] = usePersistedState('favorites', [])
+  const [customPresets, setCustomPresets] = usePersistedState('customPresets', [])
+  const [characters, setCharacters] = usePersistedState('characters', [])
+  const [settings, setSettings] = usePersistedState('settings', {
     provider: 'anthropic', apiKey: '', model: 'claude-sonnet-5',
     ollamaUrl: OLLAMA_DEFAULT_URL, ollamaModel: '',
   })
@@ -32,8 +32,8 @@ export default function App() {
   const [showStyleLab, setShowStyleLab] = useState(false)
   const [editMenu, setEditMenu] = useState(false)
   const [hoverMark, setHoverMark] = useState(null)
-  const [exportTarget, setExportTarget] = usePersistedState(React, 'exportTarget', 'structured')
-  const [exportAr, setExportAr] = usePersistedState(React, 'exportAr', '16:9')
+  const [exportTarget, setExportTarget] = usePersistedState('exportTarget', 'structured')
+  const [exportAr, setExportAr] = usePersistedState('exportAr', '16:9')
   const [toasts, setToasts] = useState([])
   const [lastAddedId, setLastAddedId] = useState(null)
   const undoStack = useRef([])
@@ -148,6 +148,7 @@ export default function App() {
   }
 
   const doAction = async (actionId) => {
+    if (busy) return
     if (!isReady(settings)) {
       setShowSettings(true)
       return toast(providerHint(settings), 'error')
@@ -167,6 +168,7 @@ export default function App() {
   }
 
   const doSmartEdit = async () => {
+    if (busy) return
     const ins = instruction.trim()
     if (!ins) return
     if (!isReady(settings)) {
@@ -235,6 +237,13 @@ export default function App() {
           </div>
           <button className="tb-btn" onClick={undo} title="Deshacer">↩ Undo</button>
           <button className="tb-btn" onClick={redo} title="Rehacer">↪ Redo</button>
+          {busy && (
+            <button
+              className="tb-btn cancel"
+              title="Cancelar la operación de IA en curso"
+              onClick={() => { cancelActive(); setBusy(null) }}
+            >✕ Cancelar</button>
+          )}
         </div>
         <button className="btn" onClick={() => setShowStyleLab(true)} title="Extraer el ADN visual de una imagen">🧬 Style DNA</button>
         <button className="btn" onClick={() => setShowCS(true)}>👤 Character Studio</button>
@@ -319,6 +328,7 @@ export default function App() {
           setAr={setExportAr}
           onClose={() => setShowExport(false)}
           toast={toast}
+          settings={settings}
         />
       )}
       {showSettings && (

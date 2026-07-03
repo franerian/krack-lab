@@ -68,6 +68,15 @@ export default function PresetSidebar({ favorites, onToggleFav, onInsert, custom
     })).filter((g) => g.presets.length)
   }, [q])
 
+  // La búsqueda también cubre los presets guardados por el usuario
+  // (incluidos los ADN de estilo, que no tienen `text`).
+  const customFiltered = useMemo(() => {
+    if (!q) return customPresets
+    return customPresets.filter((p) =>
+      [p.name, p.text, p.desc, p.section].filter(Boolean).some((f) => f.toLowerCase().includes(q))
+    )
+  }, [q, customPresets])
+
   const favPresets = useMemo(
     () => PRESET_GROUPS.flatMap((g) => g.presets).filter((p) => favorites.includes(p.id)),
     [favorites]
@@ -104,11 +113,11 @@ export default function PresetSidebar({ favorites, onToggleFav, onInsert, custom
             </Group>
           </>
         )}
-        {!q && customPresets.length > 0 && (
+        {customFiltered.length > 0 && (
           <>
             <div className="cat-header">🔖 Mis presets</div>
-            <Group label="Guardados por mí" presets={customPresets} defaultOpen>
-              {customPresets.map((p) => (
+            <Group label="Guardados por mí" presets={customFiltered} defaultOpen>
+              {customFiltered.map((p) => (
                 <PresetRow key={p.id} preset={p} onInsert={onInsert} onDelete={onDeleteCustom} applied={isApplied(p)} onHover={onHoverPreset} />
               ))}
             </Group>
@@ -134,7 +143,9 @@ export default function PresetSidebar({ favorites, onToggleFav, onInsert, custom
             ))}
           </React.Fragment>
         ))}
-        {q && totalShown === 0 && <div className="cat-header">Sin resultados para “{query}”</div>}
+        {q && totalShown === 0 && customFiltered.length === 0 && (
+          <div className="cat-header">Sin resultados para “{query}”</div>
+        )}
       </div>
     </aside>
   )

@@ -1,12 +1,13 @@
 import React, { useRef, useState } from 'react'
-import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, isReady, providerHint } from '../lib/anthropic.js'
+import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, isReady, providerHint, cancelActive } from '../lib/anthropic.js'
+import LogViewer from './LogViewer.jsx'
 import { clipSimilarity } from '../lib/clip.js'
 import { fileToImage } from '../lib/image.js'
 import { measureImage, extractFileMetadata, measurementsToText } from '../lib/imageAnalysis.js'
 import { florenceGrounding, groundingToText } from '../lib/florence.js'
 import { highlightHtml } from '../lib/highlight.js'
 import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
-import { addRun, getRuns, clearRuns, runToMarkdown, allRunsToMarkdown } from '../lib/dnaLog.js'
+import { addRun, getRuns } from '../lib/dnaLog.js'
 
 const nowIso = () => new Date().toISOString().replace('T', ' ').slice(0, 19)
 const modelLabel = (s) => (s.provider === 'ollama' ? s.ollamaModel : s.model)
@@ -58,6 +59,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   }
 
   const analyze = async () => {
+    if (busy) return
     if (!img) return toast('Cargá primero una imagen de referencia', 'error')
     if (!isReady(settings)) return toast(providerHint(settings), 'error')
     setBusy(true)
@@ -310,6 +312,11 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                     : pass === 2 ? 'Verificando fidelidad… (2/2)' : `Extrayendo ADN… (1/${verify ? 2 : 1})`)
                 : 'Extraer ADN visual'}
             </button>
+            {busy && (
+              <button className="btn ghost" style={{ width: '100%' }} onClick={() => cancelActive()}>
+                ✕ Cancelar
+              </button>
+            )}
             {grounding && (
               <div className="grounding-info" title={groundingToText(grounding)}>
                 🔎 Florence-2: {grounding.regionCount} regiones inventariadas
@@ -424,73 +431,6 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
           >Aplicar al prompt →</button>
         </div>
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => loadFile(e.target.files[0])} />
-      </div>
-    </div>
-  )
-}
-
-// Visor del log de corridas: prompt exacto + salida cruda de cada pasada,
-// para copiar/descargar e iterar sobre la calidad del ADN.
-function LogViewer({ onClose, onCleared, toast }) {
-  const [runs, setRuns] = useState(() => getRuns())
-  const [sel, setSel] = useState(0)
-  const run = runs[sel]
-
-  const copyOne = () => {
-    navigator.clipboard.writeText(runToMarkdown(run))
-    toast('Run copiado (markdown)', 'ok')
-  }
-  const copyAll = () => {
-    navigator.clipboard.writeText(allRunsToMarkdown(runs))
-    toast(`${runs.length} runs copiados`, 'ok')
-  }
-  const download = () => {
-    const blob = new Blob([JSON.stringify(runs, null, 2)], { type: 'application/json' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = 'dna-lab-log.json'
-    a.click()
-    URL.revokeObjectURL(a.href)
-  }
-  const clear = () => {
-    if (!window.confirm('¿Borrar todo el log de corridas?')) return
-    clearRuns(); setRuns([]); onCleared(); toast('Log borrado', 'ok')
-  }
-
-  return (
-    <div className="overlay" style={{ zIndex: 60 }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-head">
-          <div className="modal-title">🐞 DNA Lab <span className="accent">Log</span></div>
-          <div style={{ flex: 1 }} />
-          <button className="btn small" onClick={copyOne} disabled={!run}>⧉ Copiar run</button>
-          <button className="btn small" onClick={copyAll} disabled={!runs.length}>⧉ Copiar todos</button>
-          <button className="btn small" onClick={download} disabled={!runs.length}>⭳ JSON</button>
-          <button className="btn small ghost" onClick={clear} disabled={!runs.length}>Limpiar</button>
-          <button className="modal-close" onClick={onClose}>✕</button>
-        </div>
-        <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 14 }}>
-          <div className="log-list">
-            {!runs.length && <div className="sl-placeholder">Sin corridas aún.</div>}
-            {runs.map((r, i) => (
-              <button
-                key={i}
-                className={'log-item' + (i === sel ? ' active' : '')}
-                onClick={() => setSel(i)}
-              >
-                <div className="log-item-ts">{r.ts.slice(11)} · {r.mode === 'style' ? 'ADN' : 'réplica'}</div>
-                <div className="log-item-sub">
-                  {r.model} · {r.passes.length}p{r.error ? ' · ⚠' : ''}
-                </div>
-              </button>
-            ))}
-          </div>
-          <div className="log-detail">
-            {run ? (
-              <pre className="export-pre" style={{ maxHeight: '60vh' }}>{runToMarkdown(run)}</pre>
-            ) : <div className="sl-placeholder">Elegí una corrida.</div>}
-          </div>
-        </div>
       </div>
     </div>
   )

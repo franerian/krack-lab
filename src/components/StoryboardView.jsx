@@ -9,7 +9,17 @@ function ShotCard({ index, label, text, toast }) {
 
   const loadFile = (file) => {
     if (!file || !file.type.startsWith('image/')) return
-    setImg(URL.createObjectURL(file))
+    setImg((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(file)
+    })
+  }
+
+  const clearImg = () => {
+    setImg((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return null
+    })
   }
 
   const copy = () => {
@@ -44,7 +54,7 @@ function ShotCard({ index, label, text, toast }) {
       </div>
       <div className="shot-actions">
         <button className="btn small" onClick={copy}>⧉ Copiar prompt</button>
-        {img && <button className="btn small ghost" onClick={() => setImg(null)}>Quitar imagen</button>}
+        {img && <button className="btn small ghost" onClick={clearImg}>Quitar imagen</button>}
       </div>
       <input
         ref={fileRef} type="file" accept="image/*" hidden

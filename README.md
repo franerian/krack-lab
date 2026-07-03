@@ -60,9 +60,12 @@ npm run build    # bundle de producción en dist/
   mouse por un preset aplicado, su texto se ilumina en el editor.
 - **Character Studio desde foto**: además de la descripción, podés subir una
   foto de referencia (📷) y la IA completa la ficha del personaje observándola.
-- **Exportar por modelo destino** (🎯): compiladores factorizados según la
-  documentación oficial de prompting de cada modelo (07/2026) — ver
-  `src/data/targets.js`:
+- **Exportar por modelo destino** (🎯) con **✨ Pulir con IA**: además del
+  compilado mecánico, un botón reescribe el prompt como una sola pieza
+  fluida nativa de la plataforma (medio primero, cada dato una vez, colores
+  nombrados, ~120-160 palabras — el formato que demostró replicar mejor).
+  Compiladores factorizados según la documentación oficial de prompting de
+  cada modelo (07/2026) — ver `src/data/targets.js`:
   - *Midjourney V7*: lenguaje natural conciso, lo esencial primero (los
     primeros tokens pesan más), parámetros al final (`--ar`, `--no`).
   - *Sora 2* (OpenAI Cookbook): brief de cinematógrafo en prosa + sonido
@@ -94,6 +97,11 @@ En Ajustes (⚙) se elige el proveedor:
 
 Sin proveedor configurado, todo lo no-IA funciona igual (editor, presets,
 storyboard en modo plantillas, Character Studio manual).
+
+Robustez de las llamadas IA: timeout (3 min API / 10 min local), botón
+**Cancelar** para operaciones en curso, reintento automático con recordatorio
+de formato cuando el modelo deriva la estructura, y manejo de modelos
+razonadores (margen de tokens para el "thinking" y limpieza de `<think>`).
 
 > Nota: no existe forma oficial de usar la **suscripción** de claude.ai desde
 > una app propia; la suscripción no expone API. Por eso las opciones son API

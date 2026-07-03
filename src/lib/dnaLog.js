@@ -5,6 +5,10 @@ import { load, save } from './storage.js'
 
 const KEY = 'dnaLog'
 const MAX_RUNS = 20
+// Cap por campo: protege la cuota de localStorage (~5MB) sin perder lo
+// útil para diagnóstico (los system prompts rondan 6-8k).
+const CAP = 20_000
+const cap = (s) => (typeof s === 'string' && s.length > CAP ? s.slice(0, CAP) + '\n…[truncado]' : s)
 
 export function getRuns() {
   return load(KEY, [])
@@ -12,7 +16,13 @@ export function getRuns() {
 
 export function addRun(run) {
   const runs = getRuns()
-  runs.unshift(run)
+  runs.unshift({
+    ...run,
+    measurements: cap(run.measurements),
+    passes: (run.passes || []).map((p) => ({
+      ...p, system: cap(p.system), user: cap(p.user), raw: cap(p.raw),
+    })),
+  })
   save(KEY, runs.slice(0, MAX_RUNS))
 }
 

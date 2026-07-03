@@ -354,6 +354,11 @@ body {
 .shot-text b { color: var(--accent-soft); font-weight: 600; }
 .shot-actions { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--border); }
 
+/* ───────── Cancelar IA ───────── */
+.tb-btn.cancel { color: #fca5a5; }
+.tb-btn.cancel:hover { color: #fecaca; }
+.polish-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+
 /* ───────── Dropdown Edit ───────── */
 .dropdown { position: relative; }
 .menu-backdrop { position: fixed; inset: 0; z-index: 39; }
