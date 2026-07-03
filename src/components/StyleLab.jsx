@@ -149,7 +149,8 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     if (metrics && genMetrics) {
       // Paleta COMPLETA con porcentajes: los acentos minoritarios (ej. un tono
       // cálido al 7%) suelen ser el alma de la imagen — nunca recortarlos.
-      const pal = (m) => m.palette.map((c) => `${c.hex} (${c.pct}%)`).join(' ')
+      // Incluye los acentos salientes: son los primeros que se pierden.
+      const pal = (m) => [...m.palette, ...(m.accents || [])].map((c) => `${c.hex} (${c.pct}%)`).join(' ')
       lines.push(
         `- ORIGINAL: brightness ${metrics.brightness10}/10 (${metrics.key}), contrast ${metrics.contrast10}/10, saturation ${metrics.saturation10}/10, palette ${pal(metrics)}`,
         `- GENERATION: brightness ${genMetrics.brightness10}/10 (${genMetrics.key}), contrast ${genMetrics.contrast10}/10, saturation ${genMetrics.saturation10}/10, palette ${pal(genMetrics)}`,
@@ -280,6 +281,19 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                     />
                   ))}
                 </div>
+                {metrics.accents?.length > 0 && (
+                  <div className="accent-row" title="Colores de poca área pero visualmente definitorios (detectados como outliers cromáticos)">
+                    <span className="accent-label">acentos</span>
+                    {metrics.accents.map((c) => (
+                      <span
+                        key={c.hex}
+                        className="accent-chip"
+                        style={{ background: c.hex }}
+                        title={`${c.hex} · ${c.pct}%`}
+                      />
+                    ))}
+                  </div>
+                )}
                 <div className="metric-badges">
                   <span className="metric-badge" title="Desviación tonal medida">Contraste {metrics.contrast10}/10</span>
                   <span className="metric-badge">Saturación {metrics.saturation10}/10</span>

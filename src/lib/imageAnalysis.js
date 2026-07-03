@@ -3,14 +3,35 @@
 // metadata embebida (EXIF de cámara / prompt original de generadores IA).
 import exifr from 'exifr'
 
+const dist2 = (a, b) => {
+  const dr = a[0] - b[0]
+  const dg = a[1] - b[1]
+  const db = a[2] - b[2]
+  return dr * dr + dg * dg + db * db
+}
+
 // ── Paleta dominante por k-means sobre una muestra de píxeles ──
-function kmeansPalette(pixels, k = 6, iterations = 8) {
-  // Inicializa centroides con muestras espaciadas.
-  let centroids = []
-  for (let i = 0; i < k; i++) {
-    centroids.push([...pixels[Math.floor((i / k) * pixels.length)]])
+function kmeansCore(pixels, k, iterations = 8) {
+  // Inicialización farthest-point: cada centroide arranca en el color más
+  // lejano a los ya elegidos → diversidad garantizada. (La init por índice
+  // desperdiciaba clusters en duplicados del color de las primeras filas.)
+  const centroids = [pixels[Math.floor(pixels.length / 2)].slice()]
+  const stride = Math.max(1, Math.floor(pixels.length / 3000))
+  while (centroids.length < k) {
+    let bestP = null
+    let bestD = -1
+    for (let i = 0; i < pixels.length; i += stride) {
+      let dmin = Infinity
+      for (const c of centroids) {
+        const d = dist2(pixels[i], c)
+        if (d < dmin) dmin = d
+      }
+      if (dmin > bestD) { bestD = dmin; bestP = pixels[i] }
+    }
+    if (!bestP) break
+    centroids.push(bestP.slice())
   }
-  let assignments = new Array(pixels.length).fill(0)
+  const assignments = new Array(pixels.length).fill(0)
   for (let iter = 0; iter < iterations; iter++) {
     for (let p = 0; p < pixels.length; p++) {
       let best = 0
@@ -37,13 +58,76 @@ function kmeansPalette(pixels, k = 6, iterations = 8) {
   }
   const counts = new Array(k).fill(0)
   for (const a of assignments) counts[a]++
-  return centroids
-    .map((c, i) => ({
-      hex: '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join(''),
-      pct: Math.round((counts[i] / pixels.length) * 100),
-    }))
-    .filter((c) => c.pct > 0)
+  return { centroids, counts }
+}
+
+const toHex = (c) =>
+  '#' + c.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')
+
+function kmeansPalette(pixels, k = 12, iterations = 8) {
+  const { centroids, counts } = kmeansCore(pixels, k, iterations)
+  // Fusiona clusters casi idénticos (dist < 22) sumando sus áreas.
+  const entries = centroids
+    .map((c, i) => ({ c, count: counts[i] }))
+    .filter((e) => e.count > 0)
+    .sort((a, b) => b.count - a.count)
+  const merged = []
+  for (const e of entries) {
+    const near = merged.find((m) => dist2(m.c, e.c) < 22 * 22)
+    if (near) near.count += e.count
+    else merged.push({ c: e.c.slice(), count: e.count })
+  }
+  // Clasificación por área: los clusters grandes son la paleta dominante;
+  // los chicos (<1.5%) son ACENTOS — reales pero de poca superficie (una
+  // capucha rosa, una bufanda roja). Redondearlos a 0% era perderlos.
+  const withPct = merged.map((m) => ({
+    c: m.c,
+    hex: toHex(m.c),
+    pct: Math.round((m.count / pixels.length) * 1000) / 10,
+  }))
+  const palette = withPct
+    .filter((e) => e.pct >= 1.5)
     .sort((a, b) => b.pct - a.pct)
+    .map(({ hex, pct }) => ({ hex, pct: Math.round(pct) }))
+  const smallClusters = withPct.filter((e) => e.pct >= 0.15 && e.pct < 1.5)
+  return { palette, centroids: merged.map((m) => m.c), smallClusters }
+}
+
+// Acentos salientes: el k-means por área absorbe los colores chicos y vivos
+// (una capucha rosa al 2% desaparece dentro del promedio del cluster grande),
+// y esos acentos suelen ser el alma de la imagen. Se detectan como OUTLIERS
+// cromáticos — píxeles lejos de TODOS los clusters dominantes — y se
+// re-clusterizan aparte.
+function detectAccents(pixels, centroids) {
+  const n = pixels.length
+  const outliers = []
+  for (const p of pixels) {
+    let best = Infinity
+    for (const c of centroids) {
+      const dr = p[0] - c[0]
+      const dg = p[1] - c[1]
+      const db = p[2] - c[2]
+      const d = dr * dr + dg * dg + db * db
+      if (d < best) best = d
+    }
+    if (best > 60 * 60) outliers.push(p)
+  }
+  if (outliers.length < Math.max(8, n * 0.002)) return []
+  const k = Math.min(4, outliers.length)
+  const { centroids: ac, counts } = kmeansCore(outliers, k, 8)
+  return ac
+    .map((c, i) => ({ c, hex: toHex(c), pct: Math.round((counts[i] / n) * 1000) / 10 }))
+    .filter((a) => a.pct >= 0.2)
+    // descarta los que igual quedaron cerca de un color dominante
+    .filter((a) =>
+      centroids.every((c) => {
+        const dr = a.c[0] - c[0]
+        const dg = a.c[1] - c[1]
+        const db = a.c[2] - c[2]
+        return dr * dr + dg * dg + db * db > 45 * 45
+      })
+    )
+    .sort((x, y) => y.pct - x.pct)
 }
 
 const gcd = (a, b) => (b ? gcd(b, a % b) : a)
@@ -92,8 +176,17 @@ export function measureImage(dataUrl) {
       let nearest = standards[0]
       for (const s of standards) if (Math.abs(s[1] - ratio) < Math.abs(nearest[1] - ratio)) nearest = s
 
+      const { palette, centroids, smallClusters } = kmeansPalette(pixels)
+      // Acentos = clusters chicos del k-means + outliers cromáticos que no
+      // consiguieron cluster, deduplicados entre sí (dist > 30).
+      const accents = []
+      for (const a of [...smallClusters, ...detectAccents(pixels, centroids)].sort((x, y) => y.pct - x.pct)) {
+        if (accents.every((b) => dist2(a.c, b.c) > 30 * 30)) accents.push(a)
+        if (accents.length >= 4) break
+      }
       resolve({
-        palette: kmeansPalette(pixels),
+        palette,
+        accents: accents.map(({ hex, pct }) => ({ hex, pct })),
         lumMean: Math.round(lumMean),
         contrast10,
         saturation10,
@@ -193,6 +286,9 @@ export function measurementsToText(m, meta) {
   const lines = [
     'MEASURED GROUND TRUTH (computed programmatically from the actual pixels — these are FACTS, your description must obey them):',
     `- Dominant palette (hex, % of frame): ${m.palette.map((c) => `${c.hex} (${c.pct}%)`).join(', ')}`,
+    ...(m.accents?.length
+      ? [`- Salient ACCENT colors (tiny area but visually DEFINING — each one MUST appear named in # Color): ${m.accents.map((c) => `${c.hex} (${c.pct}%)`).join(', ')}`]
+      : []),
     `- Brightness: mean luminance ${m.lumMean}/255 → ${m.key} (brightness ${m.brightness10}/10)`,
     `- Contrast: ${m.contrast10}/10 (measured tonal std deviation)`,
     `- Saturation: ${m.saturation10}/10${m.saturation10 <= 3 ? ' (muted/desaturated)' : m.saturation10 >= 7 ? ' (vivid)' : ''}`,
