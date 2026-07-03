@@ -19,8 +19,10 @@ export default function App() {
   const [favorites, setFavorites] = usePersistedState('favorites', [])
   const [customPresets, setCustomPresets] = usePersistedState('customPresets', [])
   const [characters, setCharacters] = usePersistedState('characters', [])
+  // Demo (Gemini gratuito) como default: la app funciona sin configurar nada.
   const [settings, setSettings] = usePersistedState('settings', {
-    provider: 'anthropic', apiKey: '', model: 'claude-sonnet-5',
+    provider: 'gemini', geminiKey: '', geminiModel: 'gemini-2.5-flash',
+    apiKey: '', model: 'claude-sonnet-5',
     ollamaUrl: OLLAMA_DEFAULT_URL, ollamaModel: '',
   })
   const [view, setView] = useState('editor')

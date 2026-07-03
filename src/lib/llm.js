@@ -3,6 +3,7 @@
 // anthropic.js (acciones) — acá solo viaja texto.
 
 const API_URL = 'https://api.anthropic.com/v1/messages'
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
 export const OLLAMA_DEFAULT_URL = 'http://localhost:11434'
 
 export const MODELS = [
@@ -10,6 +11,16 @@ export const MODELS = [
   { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (rápido y barato)' },
   { id: 'claude-opus-4-8', label: 'Claude Opus 4.8 (máxima calidad)' },
 ]
+
+export const GEMINI_MODELS = [
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (visión, recomendado)' },
+  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (más cupo diario)' },
+]
+
+// Key demo del free tier de Google (sin tarjeta asociada: el peor caso es
+// agotar el cupo diario, nunca un costo). Solución temporal para compartir
+// la app en modo demo; cualquiera puede usar su propia key de AI Studio.
+export const DEMO_GEMINI_KEY = 'AQ.Ab8RN6Koghnv2v_DHaePLntghIwyT8owr0Jx2BA1JE85wUHYAA'
 
 // ── Cancelación y timeouts ──
 // Registro de llamadas en vuelo: "Cancelar" en la UI aborta todas.
@@ -135,6 +146,50 @@ export async function callOllama({ url, model, system, user, maxTokens = 2000, i
   })
 }
 
+export async function callGemini({ apiKey, model, system, user, maxTokens = 2000, image, images }) {
+  const key = apiKey || DEMO_GEMINI_KEY
+  const m = model || 'gemini-2.5-flash'
+  const imgs = images || (image ? [image] : null)
+  const parts = [
+    ...(imgs || []).map((im) => ({
+      inline_data: { mime_type: im.mediaType, data: im.base64 },
+    })),
+    { text: user },
+  ]
+  return withAbort(180_000, async (signal) => {
+    const res = await fetch(`${GEMINI_URL}/${m}:generateContent?key=${encodeURIComponent(key)}`, {
+      method: 'POST',
+      signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts }],
+        generationConfig: {
+          maxOutputTokens: maxTokens + 1024,
+          temperature: 0.7,
+          // Gemini 2.5 razona por defecto y el thinking consume el
+          // presupuesto de salida (verificado: truncaba). Se apaga.
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      }),
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      if (res.status === 429) {
+        throw new Error('Cupo demo de Gemini agotado por hoy — probá más tarde, o usá Ollama/Claude en Ajustes')
+      }
+      throw new Error(`Gemini ${res.status}: ${body.slice(0, 300)}`)
+    }
+    const data = await res.json()
+    const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || ''
+    if (!text) {
+      const reason = data.candidates?.[0]?.finishReason || data.promptFeedback?.blockReason || 'sin contenido'
+      throw new Error(`Gemini no devolvió texto (${reason})`)
+    }
+    return text
+  })
+}
+
 export async function listOllamaModels(url) {
   const base = (url || OLLAMA_DEFAULT_URL).replace(/\/$/, '')
   const res = await fetch(`${base}/api/tags`)
@@ -150,19 +205,26 @@ export function callLLM(settings, { system, user, maxTokens, image, images }) {
       url: settings.ollamaUrl, model: settings.ollamaModel, system, user, maxTokens, image, images,
     })
   }
-  return callClaude({
-    apiKey: settings.apiKey, model: settings.model, system, user, maxTokens, image, images,
+  if (settings.provider === 'anthropic') {
+    return callClaude({
+      apiKey: settings.apiKey, model: settings.model, system, user, maxTokens, image, images,
+    })
+  }
+  // Default: Gemini (modo demo con key gratuita embebida, o la del usuario).
+  return callGemini({
+    apiKey: settings.geminiKey, model: settings.geminiModel, system, user, maxTokens, image, images,
   })
 }
 
 // ¿Está el proveedor listo para usarse?
 export function isReady(settings) {
   if (settings.provider === 'ollama') return !!settings.ollamaModel
-  return !!settings.apiKey
+  if (settings.provider === 'anthropic') return !!settings.apiKey
+  return true // gemini: la key demo siempre está disponible
 }
 
 export function providerHint(settings) {
-  return settings.provider === 'ollama'
-    ? 'Elegí un modelo de Ollama en Ajustes'
-    : 'Configurá tu API key (o elegí Ollama local) en Ajustes'
+  if (settings.provider === 'ollama') return 'Elegí un modelo de Ollama en Ajustes'
+  if (settings.provider === 'anthropic') return 'Configurá tu API key de Anthropic en Ajustes'
+  return 'El modo demo (Gemini) debería funcionar — revisá Ajustes'
 }

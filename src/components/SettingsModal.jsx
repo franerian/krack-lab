@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react'
-import { MODELS, callLLM, listOllamaModels, OLLAMA_DEFAULT_URL } from '../lib/anthropic.js'
+import { MODELS, GEMINI_MODELS, callLLM, listOllamaModels, OLLAMA_DEFAULT_URL } from '../lib/anthropic.js'
 
 export default function SettingsModal({ settings, setSettings, onClose, toast }) {
-  const [provider, setProvider] = useState(settings.provider || 'anthropic')
+  const [provider, setProvider] = useState(settings.provider || 'gemini')
   const [apiKey, setApiKey] = useState(settings.apiKey || '')
   const [model, setModel] = useState(settings.model || MODELS[0].id)
+  const [geminiKey, setGeminiKey] = useState(settings.geminiKey || '')
+  const [geminiModel, setGeminiModel] = useState(settings.geminiModel || GEMINI_MODELS[0].id)
   const [ollamaUrl, setOllamaUrl] = useState(settings.ollamaUrl || OLLAMA_DEFAULT_URL)
   const [ollamaModel, setOllamaModel] = useState(settings.ollamaModel || '')
   const [ollamaModels, setOllamaModels] = useState([])
@@ -39,7 +41,11 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
 
   const originCmd = `launchctl setenv OLLAMA_ORIGINS "${window.location.origin}" && killall Ollama && open -a Ollama`
 
-  const current = { provider, apiKey: apiKey.trim(), model, ollamaUrl: ollamaUrl.trim(), ollamaModel }
+  const current = {
+    provider, apiKey: apiKey.trim(), model,
+    ollamaUrl: ollamaUrl.trim(), ollamaModel,
+    geminiKey: geminiKey.trim(), geminiModel,
+  }
 
   const test = async () => {
     setTesting(true)
@@ -65,17 +71,49 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
             <label>Proveedor de IA</label>
             <div className="tabs">
               <button
-                className={'tab' + (provider === 'anthropic' ? ' active' : '')}
-                onClick={() => setProvider('anthropic')}
-              >Claude (API)</button>
+                className={'tab' + (provider === 'gemini' ? ' active' : '')}
+                onClick={() => setProvider('gemini')}
+              >✨ Demo (Gemini)</button>
               <button
                 className={'tab' + (provider === 'ollama' ? ' active' : '')}
                 onClick={() => setProvider('ollama')}
-              >Ollama (local, gratis)</button>
+              >Ollama (local)</button>
+              <button
+                className={'tab' + (provider === 'anthropic' ? ' active' : '')}
+                onClick={() => setProvider('anthropic')}
+              >Claude (API)</button>
             </div>
           </div>
 
-          {provider === 'anthropic' ? (
+          {provider === 'gemini' && (
+            <>
+              <div className="field">
+                <label>Modelo</label>
+                <select value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)}>
+                  {GEMINI_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label>Tu API key de Gemini (opcional)</label>
+                <input
+                  type="password"
+                  value={geminiKey}
+                  placeholder="Vacío = key demo compartida"
+                  onChange={(e) => setGeminiKey(e.target.value)}
+                />
+              </div>
+              <p className="hint">
+                Funciona <b>sin configurar nada</b>: usa una key demo compartida del free tier
+                de Google (con visión — el Style DNA Lab anda completo). Si el cupo diario se
+                agota, creá tu propia key gratis (sin tarjeta) en{' '}
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
+                  aistudio.google.com/apikey
+                </a>{' '}y pegala arriba — se guarda solo en tu navegador.
+              </p>
+            </>
+          )}
+
+          {provider === 'anthropic' && (
             <>
               <div className="field">
                 <label>Anthropic API Key</label>
@@ -100,7 +138,9 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
                 </a>.
               </p>
             </>
-          ) : (
+          )}
+
+          {provider === 'ollama' && (
             <>
               <div className="field">
                 <label>URL de Ollama</label>
@@ -155,7 +195,7 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
                 <p className="hint" style={{ color: '#fca5a5' }}>
                   ✕ No se detecta Ollama en <code>{ollamaUrl || OLLAMA_DEFAULT_URL}</code>.
                   Abrí la app Ollama (o corré <code>ollama serve</code>) en esta máquina y tocá Reintentar.
-                  Si no tenés Ollama, usá el proveedor Claude (API).
+                  Si no tenés Ollama, usá el modo Demo (Gemini) o Claude (API).
                 </p>
               )}
               {ollamaState !== 'ok' && ollamaState !== 'checking' && (
@@ -170,7 +210,7 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
           <button
             className="btn"
             onClick={test}
-            disabled={testing || (provider === 'anthropic' ? !apiKey : !ollamaModel)}
+            disabled={testing || (provider === 'anthropic' ? !apiKey : provider === 'ollama' ? !ollamaModel : false)}
           >
             {testing ? <span className="spinner" /> : ''}Probar conexión
           </button>
