@@ -143,17 +143,37 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     const lines = ['OBJECTIVE COMPARISON DATA (measured programmatically — facts):']
     if (clipScore != null) lines.push(`- CLIP visual similarity between original and generation: ${clipScore}/100`)
     if (metrics && genMetrics) {
+      // Paleta COMPLETA con porcentajes: los acentos minoritarios (ej. un tono
+      // cálido al 7%) suelen ser el alma de la imagen — nunca recortarlos.
+      const pal = (m) => m.palette.map((c) => `${c.hex} (${c.pct}%)`).join(' ')
       lines.push(
-        `- ORIGINAL: contrast ${metrics.contrast10}/10, saturation ${metrics.saturation10}/10, ${metrics.key}, palette ${metrics.palette.slice(0, 4).map((c) => c.hex).join(' ')}`,
-        `- GENERATION: contrast ${genMetrics.contrast10}/10, saturation ${genMetrics.saturation10}/10, ${genMetrics.key}, palette ${genMetrics.palette.slice(0, 4).map((c) => c.hex).join(' ')}`,
+        `- ORIGINAL: brightness ${metrics.brightness10}/10 (${metrics.key}), contrast ${metrics.contrast10}/10, saturation ${metrics.saturation10}/10, palette ${pal(metrics)}`,
+        `- GENERATION: brightness ${genMetrics.brightness10}/10 (${genMetrics.key}), contrast ${genMetrics.contrast10}/10, saturation ${genMetrics.saturation10}/10, palette ${pal(genMetrics)}`,
       )
+      const db = genMetrics.brightness10 - metrics.brightness10
       const dc = genMetrics.contrast10 - metrics.contrast10
       const ds = genMetrics.saturation10 - metrics.saturation10
-      if (dc || ds) {
-        lines.push(`- Drift to compensate: ${[
-          dc && `generation contrast is ${dc > 0 ? 'higher' : 'lower'} by ${Math.abs(dc)} points`,
-          ds && `generation saturation is ${ds > 0 ? 'higher' : 'lower'} by ${Math.abs(ds)} points`,
-        ].filter(Boolean).join('; ')}.`)
+      const drifts = [
+        db && `generation brightness is ${db > 0 ? 'higher' : 'lower'} by ${Math.abs(db)} points${db > 1 ? ' (wrong time-of-day / exposure — correct explicitly)' : ''}`,
+        dc && `generation contrast is ${dc > 0 ? 'higher' : 'lower'} by ${Math.abs(dc)} points`,
+        ds && `generation saturation is ${ds > 0 ? 'higher' : 'lower'} by ${Math.abs(ds)} points`,
+      ].filter(Boolean)
+      if (drifts.length) lines.push(`- Drift to compensate: ${drifts.join('; ')}.`)
+      // Acentos del original ausentes en la generación. La distancia RGB sola
+      // no alcanza: un acento CÁLIDO (#9c837c) queda "cerca" de un gris neutro
+      // de igual luminancia — por eso también se compara la temperatura (R−B).
+      const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+      const isMissing = (c) =>
+        !genMetrics.palette.some((g) => {
+          const [ar, ag, ab2] = rgb(c.hex)
+          const [br, bg, bb] = rgb(g.hex)
+          const rgbClose = Math.sqrt((ar - br) ** 2 + (ag - bg) ** 2 + (ab2 - bb) ** 2) <= 60
+          const warmthClose = Math.abs((ar - ab2) - (br - bb)) <= 30
+          return rgbClose && warmthClose
+        })
+      const missing = metrics.palette.filter(isMissing)
+      if (missing.length) {
+        lines.push(`- MISSING COLORS: the original contains ${missing.map((c) => `${c.hex} (${c.pct}%)`).join(', ')} with no close match in the generation — restore these (they are often practicals/accents like headlight glow).`)
       }
     }
     return lines.join('\n')

@@ -244,6 +244,12 @@ ${mode === 'style'
 
 MANDATORY: the # Camera section MUST state the precise shot type AND camera angle (e.g. "extreme low-angle wide shot"), plus lens character if readable.
 
+MANDATORY — LIGHT SOURCES: the # Lighting section MUST name every VISIBLE light source in the image, especially practicals (vehicle headlights, lamps, screens, fire, neon, dashboard glow). A scene lit by headlights is NOT the same as ambient fog light. State the time of day consistently with the measured brightness: brightness ≤3/10 means dusk/night — never describe it as "day".
+
+MANDATORY — ACCENT COLORS: the # Color section must account for EVERY measured dominant hex, including minority accents (a 5-10% warm tone against a muted field is usually the soul of the image — dropping it is a critical failure).
+
+3D-vs-2D TELL: if the image shows true 3D perspective depth with faceted/flat-shaded geometry (even with painted-looking fog or textures), it is a STYLIZED 3D GAME RENDER — not a 2D illustration. Reserve "2D illustration / concept art" for images with no coherent 3D geometry.
+
 CALIBRATED SCALES: when the user message includes MEASURED GROUND TRUTH, those values were computed programmatically from the pixels and are non-negotiable facts. Your wording for contrast, saturation and brightness MUST be consistent with the measured N/10 values (e.g. contrast 3/10 can never be "high contrast"). In # Color, cite the dominant hex values verbatim alongside their color names. If CAMERA EXIF is present, # Camera must be built on it. Express contrast, saturation and brightness as "N/10" ratings inside the prompt so they stay reproducible.
 
 OUTPUT FORMAT — your entire response is EXACTLY this structure and nothing else (no preamble, no notes, no fences), in English:
