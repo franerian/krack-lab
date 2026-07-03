@@ -241,13 +241,15 @@ Every clause you write MUST obey that DNA. You are FORBIDDEN from naming any tex
 ${mode === 'style'
   ? `MODE: STYLE ONLY. Describe ONLY the aesthetic treatment so it can be transferred to a completely different scene. You are FORBIDDEN from describing the subject, characters, objects or specific content of the image. No # Subject section.`
   : `MODE: FULL REPLICA. Also reconstruct the scene: include # Subject (and # Action / # Environment if relevant), each described through the lens of the Style DNA.
-REPLICA COMPLETENESS — INVENTORY, DON'T INVENT: # Subject must inventory every significant visible object (including easy-to-miss ones: hands, mirrors, wipers, signage, screens). And the reverse is LAW: never add objects, text, signs or details that are NOT in the image — generators invent clutter, so if the image contains no readable text or signage, # Negative MUST include "no text, no signage, no lettering".`}
+REPLICA COMPLETENESS — INVENTORY, DON'T INVENT: # Subject must inventory every significant visible object (including easy-to-miss ones: hands, mirrors, wipers, signage, screens), each WITH its physical condition (bare/dead vs lush, worn vs new, lit vs off). And the reverse is LAW: never add objects, text, signs or details that are NOT in the image — generators invent clutter, so if the image contains no readable text or signage, # Negative MUST include "no text, no signage, no lettering".`}
 
 MANDATORY: the # Camera section MUST state the precise shot type AND camera angle (e.g. "extreme low-angle wide shot"), plus lens character if readable.
 
-MANDATORY — LIGHT SOURCES: the # Lighting section MUST name every VISIBLE light source in the image, especially practicals (vehicle headlights, lamps, screens, fire, neon, dashboard glow). A scene lit by headlights is NOT the same as ambient fog light. State the time of day consistently with the measured brightness: brightness ≤3/10 means dusk/night — never describe it as "day".
+MANDATORY — LIGHT SOURCES: the # Lighting section MUST name every VISIBLE light source in the image, especially practicals (vehicle headlights, lamps, screens, fire, neon, dashboard glow). For each light, attribute it to its EMITTING OBJECT — never describe a glow without saying what produces it. State the time of day consistently with the measured brightness: brightness ≤3/10 means dusk/night — never describe it as "day".
 
-MANDATORY — ACCENT COLORS: the # Color section must account for EVERY measured dominant hex, including minority accents (a 5-10% warm tone against a muted field is usually the soul of the image — dropping it is a critical failure).
+MANDATORY — ACCENT COLORS: the # Color section must account for EVERY measured dominant hex, including minority accents (a 5-10% warm tone against a muted field is usually the soul of the image — dropping it is a critical failure). Write every color as an evocative NAME first with the hex in parentheses after it — e.g. "dusty slate blue-green (#494c50)". Generators read the names; the hexes are internal calibration.
+
+MANDATORY — NO REDUNDANCY, MAX BREVITY: each section contributes ONLY its own dimension. The framing/POV is stated ONCE, in # Camera — # Subject says WHAT is visible, never how it is framed. Max 2 short atomic sentences per section: a tight 130-word prompt outperforms a 300-word one; repetition dilutes every signal.
 
 3D-vs-2D TELL: if the image shows true 3D perspective depth with faceted/flat-shaded geometry (even with painted-looking fog or textures), it is a STYLIZED 3D GAME RENDER — not a 2D illustration. Reserve "2D illustration / concept art" for images with no coherent 3D geometry.
 
@@ -322,10 +324,17 @@ export async function critiqueStyleDNA({ settings, image, draft, mode = 'style',
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
   const system = DNA_SYSTEM(mode) + `
 
-VERIFICATION MODE: you receive a DRAFT prompt produced from this same image. Your job now is forensic quality control:
-1. Silently compare the draft against the image (and the measured ground truth if present).
-2. Find OMISSIONS (visible traits the draft missed), EXAGGERATIONS (adjectives stronger than what the image shows — the most common failure), and CONTRADICTIONS (claims that violate the image, the measurements, or the draft's own Style DNA).
-3. Output the CORRECTED full prompt in the exact same section format — nothing else. Keep what the draft got right; fix only what fails. Calibrate every intensity word against the measurements.`
+VERIFICATION MODE: you receive a DRAFT prompt produced from this same image. Audit it against this CHECKLIST, item by item, and fix EVERY failure:
+1. MEDIUM — is the Step-0 medium right? 3D perspective + faceted geometry = 3D render, never "2D illustration"; no photo tells = never "photography".
+2. TIME & BRIGHTNESS — does the wording match the measured brightness? ≤3/10 and any form of "day/daylight" appears = FAILURE, rewrite as dusk/night.
+3. LIGHTS — is every visible light present AND attributed to its emitting object (headlights, radio dial, lamp, sky)? A glow with no named source = failure.
+4. COLORS — is every measured hex present as "name (#hex)", including minority accents? A dropped accent = failure.
+5. EDGES & FOCUS — does the draft state the edge character (soft vs crisp) and which planes are blurred?
+6. DETAIL ECONOMY — if the image is sparse, does the draft forbid added clutter?
+7. INVENTORY (replica mode) — every visible object present with its condition (hands, mirrors, wipers…)? Anything invented that is not in the image? Image has no readable text → # Negative must include "no text, no signage".
+8. REDUNDANCY — framing stated more than once across sections = failure; keep it only in # Camera. Max 2 short sentences per section.
+9. EXAGGERATIONS & CONTRADICTIONS — any wording stronger than what the image shows, or violating the measurements or the DNA itself.
+Output the CORRECTED full prompt in the exact same section format — nothing else. Keep what the draft got right.`
   const user = `DRAFT TO VERIFY:\n${draftText}${measurements ? `\n\n${measurements}` : ''}`
   const out = await callLLM(settings, { system, user, maxTokens: 1600, image })
   const parsed = textToSections(out)

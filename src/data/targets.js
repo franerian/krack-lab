@@ -22,13 +22,36 @@ const get = (sections, name) => {
 
 const sentence = (t) => (t ? (t.endsWith('.') ? t : t + '.') : '')
 
+// Los generadores de imagen/video NO leen códigos hex: en el ADN son
+// calibración interna ("dusty slate blue-green (#494c50)"), pero en el
+// prompt compilado solo aportan ruido — se quitan dejando los nombres.
+const stripHexes = (text) => {
+  let t = text.replace(/#[0-9a-fA-F]{6}/g, '')
+  // Paréntesis que quedaron con solo restos (%, comas, espacios) — dos
+  // pasadas para cubrir anidados como "(#3b3136 (13%))".
+  for (let i = 0; i < 2; i++) t = t.replace(/\(\s*[\d%\s·,;]*\)/g, '')
+  t = t
+    .replace(/\s*,\s*,/g, ',')
+    .replace(/,\s*\./g, '.')
+    .replace(/:\s*([,.])/g, '$1')
+    .replace(/\s+([,.;])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+  // Descarta oraciones que quedaron huecas al quitar los hex
+  // ("Key dominant hex values include:." → fuera).
+  return t
+    .split(/(?<=\.)\s+/)
+    .filter((s) => !/\b(includ\w+|values?|governed by|adheres? to|such as|hex\w*)\s*[:,]?\s*\.?$/i.test(s.trim()))
+    .join(' ')
+    .trim()
+}
+
 // Párrafo narrativo en un orden dado.
 const prose = (sections, order) =>
-  order.map((n) => sentence(get(sections, n))).filter(Boolean).join(' ')
+  order.map((n) => sentence(stripHexes(get(sections, n)))).filter(Boolean).join(' ')
 
 // Oraciones → lista de tags por coma (para SDXL / --no).
 const toTags = (text) =>
-  text
+  stripHexes(text)
     .replace(/\.\s+/g, ', ')
     .replace(/\.$/, '')
     .replace(/\s*,\s*/g, ', ')
@@ -55,8 +78,9 @@ export const TARGETS = [
     notes: 'Según docs de V7: lenguaje natural conciso (no listas de keywords), lo esencial primero porque los primeros tokens pesan más, y parámetros al final separados por espacio: --ar y --no (el Negative se convierte). Tip: agregá --raw a mano si querés menos "opinión" del modelo.',
     usesAr: true,
     compile: (sections, { ar } = {}) => {
-      // V7 prefiere descripción natural breve; el sujeto va primero.
-      const order = ['Subject', 'Action', 'Environment', 'Composition', 'Camera', 'Lighting', 'Color', 'Style', 'Mood']
+      // V7 pesa los primeros tokens: sujeto y MEDIO al frente (el estilo al
+      // final llega tarde — evidencia del caso low-poly, iteración 07/2026).
+      const order = ['Subject', 'Style', 'Action', 'Environment', 'Composition', 'Camera', 'Lighting', 'Color', 'Mood']
       const body = prose(sections, order).replace(/\.$/, '')
       const params = []
       if (ar) params.push(`--ar ${ar.replace(/\s/g, '')}`)
@@ -124,7 +148,7 @@ export const TARGETS = [
     notes: 'Convención A1111/ComfyUI: keywords separadas por coma con lo importante primero (los primeros ~75 tokens pesan más). El negative prompt va en su campo aparte — se copia debajo.',
     usesAr: false,
     compile: (sections) => {
-      const order = ['Subject', 'Action', 'Environment', 'Style', 'Composition', 'Camera', 'Lighting', 'Color', 'Details', 'Mood']
+      const order = ['Subject', 'Style', 'Action', 'Environment', 'Composition', 'Camera', 'Lighting', 'Color', 'Details', 'Mood']
       const body = order.map((n) => toTags(get(sections, n))).filter(Boolean).join(', ')
       const neg = negativeList(sections)
       return neg ? `${body}\n\nNegative prompt:\n${neg}` : body
@@ -133,10 +157,10 @@ export const TARGETS = [
   {
     id: 'flux',
     label: 'Flux / Nano Banana',
-    notes: 'Según la guía oficial de Google (Nano Banana) y las de BFL: narrativa descriptiva como si le hablaras a un artista humano, oraciones fluidas, sin listas de keywords y SIN negative prompts — lo indeseado se describe en positivo ("sharp focus" en vez de "no blur"). El Negative se omite.',
+    notes: 'Según la guía oficial de Google (Nano Banana) y las de BFL: narrativa descriptiva fluida con el MEDIO al frente (plantilla oficial: "A [style] of [subject]"), sin listas de keywords y SIN negative prompts — lo indeseado se describe en positivo ("sharp focus" en vez de "no blur"). El Negative se omite.',
     usesAr: false,
     compile: (sections) =>
-      prose(sections, ['Subject', 'Details', 'Action', 'Environment', 'Composition', 'Camera', 'Lighting', 'Color', 'Style', 'Mood']),
+      prose(sections, ['Style', 'Subject', 'Details', 'Action', 'Environment', 'Composition', 'Camera', 'Lighting', 'Color', 'Mood']),
   },
   {
     id: 'plain',
@@ -146,7 +170,7 @@ export const TARGETS = [
     compile: (sections) =>
       sections
         .filter((s) => s.text.trim() && s.name !== 'Negative')
-        .map((s) => s.text.trim())
+        .map((s) => stripHexes(s.text.trim()))
         .join(' '),
   },
 ]
