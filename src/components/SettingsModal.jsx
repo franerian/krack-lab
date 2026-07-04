@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Settings, X, Sparkles, Copy, RefreshCw } from 'lucide-react'
 import { MODELS, GEMINI_MODELS, callLLM, listOllamaModels, OLLAMA_DEFAULT_URL } from '../lib/anthropic.js'
 
 export default function SettingsModal({ settings, setSettings, onClose, toast }) {
@@ -63,8 +64,8 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal narrow">
         <div className="modal-head">
-          <div className="modal-title">⚙️ Ajustes</div>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <div className="modal-title"><Settings className="ico" />Ajustes</div>
+          <button className="modal-close" onClick={onClose}><X className="ico solo" /></button>
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="field">
@@ -73,7 +74,7 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
               <button
                 className={'tab' + (provider === 'gemini' ? ' active' : '')}
                 onClick={() => setProvider('gemini')}
-              >✨ Demo (Gemini)</button>
+              ><Sparkles className="ico" />Demo (Gemini)</button>
               <button
                 className={'tab' + (provider === 'ollama' ? ' active' : '')}
                 onClick={() => setProvider('ollama')}
@@ -183,7 +184,7 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
                     <button
                       className="btn small"
                       onClick={() => { navigator.clipboard.writeText(originCmd); toast('Comando copiado', 'ok') }}
-                    >⧉</button>
+                    ><Copy className="ico solo" /></button>
                   </div>
                   <p className="hint">
                     (El navegador no puede hacer esto por vos: las páginas web no tienen permiso
@@ -193,14 +194,14 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
               )}
               {ollamaState === 'down' && (
                 <p className="hint" style={{ color: '#fca5a5' }}>
-                  ✕ No se detecta Ollama en <code>{ollamaUrl || OLLAMA_DEFAULT_URL}</code>.
+                  No se detecta Ollama en <code>{ollamaUrl || OLLAMA_DEFAULT_URL}</code>.
                   Abrí la app Ollama (o corré <code>ollama serve</code>) en esta máquina y tocá Reintentar.
                   Si no tenés Ollama, usá el modo Demo (Gemini) o Claude (API).
                 </p>
               )}
               {ollamaState !== 'ok' && ollamaState !== 'checking' && (
                 <button className="btn small" style={{ alignSelf: 'flex-start' }} onClick={() => diagnose(ollamaUrl)}>
-                  ↻ Reintentar conexión
+                  <RefreshCw className="ico" />Reintentar conexión
                 </button>
               )}
             </>

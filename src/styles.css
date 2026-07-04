@@ -609,6 +609,18 @@ mark.preset-mark span { background: transparent; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ───────── Iconos (lucide) ───────── */
+.ico { width: 15px; height: 15px; vertical-align: -3px; margin-right: 6px; flex: none; }
+.ico.solo { margin-right: 0; }
+.modal-title .ico { width: 17px; height: 17px; color: var(--accent); }
+.spark svg { width: 15px; height: 15px; display: block; }
+.sidebar-fab svg { width: 22px; height: 22px; }
+.icon-btn .ico, .preset-fav .ico { width: 13px; height: 13px; vertical-align: -2px; }
+.modal-close .ico { width: 16px; height: 16px; }
+.arrow { display: inline-flex; }
+.group-head .arrow svg { width: 12px; height: 12px; }
+.sb-head h2 .ico { width: 18px; height: 18px; color: var(--accent); }
+
 .hint { color: var(--text-faint); font-size: 12px; line-height: 1.5; }
 .hint a { color: var(--accent); }
 .hint code { font-family: var(--font-mono); font-size: 11px; background: var(--bg-input); padding: 1px 5px; border-radius: 5px; }

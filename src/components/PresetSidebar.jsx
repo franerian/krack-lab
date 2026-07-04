@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import { Heart, X, ChevronRight } from 'lucide-react'
 import { PRESET_GROUPS, CATEGORY_ORDER } from '../data/presets.js'
 
 function PresetRow({ preset, fav, onToggleFav, onInsert, onDelete, applied, onHover }) {
@@ -18,13 +19,13 @@ function PresetRow({ preset, fav, onToggleFav, onInsert, onDelete, applied, onHo
           className="preset-fav"
           title="Eliminar preset"
           onClick={(e) => { e.stopPropagation(); onDelete(preset) }}
-        >✕</button>
+        ><X className="ico solo" /></button>
       ) : (
         <button
           className={'preset-fav' + (fav ? ' on' : '')}
           title="Favorito"
           onClick={(e) => { e.stopPropagation(); onToggleFav(preset.id) }}
-        >{fav ? '♥' : '♡'}</button>
+        ><Heart className="ico solo" fill={fav ? "currentColor" : "none"} /></button>
       )}
     </div>
   )
@@ -37,7 +38,7 @@ function Group({ label, presets, defaultOpen = false, children, count }) {
       <button className="group-head" onClick={() => setOpen(!open)}>
         {label}
         <span className="count">{count ?? presets?.length}</span>
-        <span className="arrow">▶</span>
+        <span className="arrow"><ChevronRight /></span>
       </button>
       {open && <div className="group-body">{children}</div>}
     </div>
@@ -105,7 +106,7 @@ export default function PresetSidebar({ open, favorites, onToggleFav, onInsert, 
       <div className="sidebar-scroll">
         {!q && favPresets.length > 0 && (
           <>
-            <div className="cat-header">♥ Favoritos</div>
+            <div className="cat-header">Favoritos</div>
             <Group label="Mis favoritos" presets={favPresets} defaultOpen>
               {favPresets.map((p) => (
                 <PresetRow key={p.id} preset={p} fav onToggleFav={onToggleFav} onInsert={onInsert} applied={isApplied(p)} onHover={onHoverPreset} />
@@ -115,7 +116,7 @@ export default function PresetSidebar({ open, favorites, onToggleFav, onInsert, 
         )}
         {customFiltered.length > 0 && (
           <>
-            <div className="cat-header">🔖 Mis presets</div>
+            <div className="cat-header">Mis presets</div>
             <Group label="Guardados por mí" presets={customFiltered} defaultOpen>
               {customFiltered.map((p) => (
                 <PresetRow key={p.id} preset={p} onInsert={onInsert} onDelete={onDeleteCustom} applied={isApplied(p)} onHover={onHoverPreset} />

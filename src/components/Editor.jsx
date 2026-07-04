@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react'
+import { ChevronUp, ChevronDown, Bookmark, X } from 'lucide-react'
 import { highlightWithMark } from '../lib/highlight.js'
 import { SECTION_NAMES } from '../data/keywords.js'
 import { SCENE_TEMPLATES } from '../data/presets.js'
@@ -32,10 +33,10 @@ function SectionBlock({ section, onChange, onRemove, onMove, onSaveAsPreset, aut
           {hasApplied && <span className="applied-dot" title="Contiene presets aplicados" />}
         </span>
         <div className="section-tools">
-          <button className="icon-btn" title="Subir" onClick={() => onMove(-1)}>▲</button>
-          <button className="icon-btn" title="Bajar" onClick={() => onMove(1)}>▼</button>
-          <button className="icon-btn" title="Guardar como preset" onClick={onSaveAsPreset}>🔖</button>
-          <button className="icon-btn danger" title="Eliminar sección" onClick={onRemove}>✕</button>
+          <button className="icon-btn" title="Subir" onClick={() => onMove(-1)}><ChevronUp className="ico solo" /></button>
+          <button className="icon-btn" title="Bajar" onClick={() => onMove(1)}><ChevronDown className="ico solo" /></button>
+          <button className="icon-btn" title="Guardar como preset" onClick={onSaveAsPreset}><Bookmark className="ico solo" /></button>
+          <button className="icon-btn danger" title="Eliminar sección" onClick={onRemove}><X className="ico solo" /></button>
         </div>
       </div>
       <div className="section-body">

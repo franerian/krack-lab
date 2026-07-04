@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react'
+import { Clapperboard, Sparkles, Copy } from 'lucide-react'
 import { COVERAGE_TYPES } from '../data/coverage.js'
 import { generateCoverage, offlineCoverage, isReady } from '../lib/anthropic.js'
 
@@ -53,7 +54,7 @@ function ShotCard({ index, label, text, toast }) {
         )}
       </div>
       <div className="shot-actions">
-        <button className="btn small" onClick={copy}>⧉ Copiar prompt</button>
+        <button className="btn small" onClick={copy}><Copy className="ico" />Copiar prompt</button>
         {img && <button className="btn small ghost" onClick={clearImg}>Quitar imagen</button>}
       </div>
       <input
@@ -103,16 +104,16 @@ export default function StoryboardView({ sections, settings, toast }) {
   return (
     <div className="storyboard">
       <div className="sb-head">
-        <h2>🎬 Storyboard</h2>
+        <h2><Clapperboard className="ico" />Storyboard</h2>
         <select value={coverageId} onChange={(e) => { setCoverageId(e.target.value); setShots(null) }}>
           {COVERAGE_TYPES.map((c) => (
             <option key={c.id} value={c.id}>{c.name} · {c.shots.length} shots</option>
           ))}
         </select>
         <button className="btn primary" onClick={generate} disabled={busy}>
-          {busy ? <span className="spinner" /> : '✨ '}Generar cobertura
+          {busy ? <span className="spinner" /> : <Sparkles className="ico" />}Generar cobertura
         </button>
-        {shots && <button className="btn" onClick={copyAll}>⧉ Copiar todo</button>}
+        {shots && <button className="btn" onClick={copyAll}><Copy className="ico" />Copiar todo</button>}
       </div>
       <p className="sb-desc">{coverage.desc} La escena base es la del editor; cada plano cambia solo la cinematografía.</p>
       {shots ? (

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Undo2, Redo2, Trash2, Folder, Save, X, Dna, UserRound, Copy, Send, Sun, Moon, Settings, Sparkles, SlidersHorizontal } from 'lucide-react'
 import Editor from './components/Editor.jsx'
 import PresetSidebar from './components/PresetSidebar.jsx'
 import CharacterStudio from './components/CharacterStudio.jsx'
@@ -212,7 +213,7 @@ export default function App() {
     if (!sections.length) return toast('El prompt ya está vacío')
     pushUndo()
     setSections([])
-    toast('Prompt nuevo — ↩ Undo recupera el anterior', 'ok')
+    toast('Prompt nuevo — Undo recupera el anterior', 'ok')
   }
 
   // ── Prompts guardados (sesiones) ──
@@ -230,13 +231,13 @@ export default function App() {
       { id: uid(), name, ts: Date.now(), sections: sections.map((s) => ({ ...s })) },
       ...prev,
     ].slice(0, 30))
-    toast(`“${name}” guardado en 📁 Prompts`, 'ok')
+    toast(`“${name}” guardado en Prompts`, 'ok')
   }
 
   const loadSession = (session) => {
     pushUndo()
     setSections(session.sections.map((s) => ({ ...s })))
-    toast(`“${session.name}” abierto (↩ Undo vuelve al anterior)`, 'ok')
+    toast(`“${session.name}” abierto (Undo vuelve al anterior)`, 'ok')
   }
 
   const deleteSession = (id) => {
@@ -253,7 +254,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="logo">
-          <span className="spark">✦</span>
+          <span className="spark"><Sparkles /></span>
           KRACK<span className="lab">LAB</span>
         </div>
         <div className="tb-actions">
@@ -287,15 +288,15 @@ export default function App() {
               </>
             )}
           </div>
-          <button className="tb-btn" onClick={undo} title="Deshacer">↩ Undo</button>
-          <button className="tb-btn" onClick={redo} title="Rehacer">↪ Redo</button>
-          <button className="tb-btn" onClick={clearPrompt} title="Empezar un prompt nuevo (el actual queda a un Undo)">🗑 Nuevo</button>
+          <button className="tb-btn" onClick={undo} title="Deshacer"><Undo2 className="ico" />Undo</button>
+          <button className="tb-btn" onClick={redo} title="Rehacer"><Redo2 className="ico" />Redo</button>
+          <button className="tb-btn" onClick={clearPrompt} title="Empezar un prompt nuevo (el actual queda a un Undo)"><Trash2 className="ico" />Nuevo</button>
           <div className="dropdown">
             <button
               className={'tb-btn' + (promptsMenu ? ' active' : '')}
               onClick={() => setPromptsMenu((v) => !v)}
               title="Prompts guardados"
-            >📁 Prompts{savedPrompts.length ? ` (${savedPrompts.length})` : ''} ▾</button>
+            ><Folder className="ico" />Prompts{savedPrompts.length ? ` (${savedPrompts.length})` : ''} ▾</button>
             {promptsMenu && (
               <>
                 <div className="menu-backdrop" onClick={() => setPromptsMenu(false)} />
@@ -303,7 +304,7 @@ export default function App() {
                   <button
                     className="menu-item"
                     onClick={() => { setPromptsMenu(false); saveSession() }}
-                  >💾 Guardar prompt actual</button>
+                  ><Save className="ico" />Guardar prompt actual</button>
                   {savedPrompts.length > 0 && <div className="menu-divider" />}
                   {savedPrompts.map((s) => (
                     <div key={s.id} className="menu-row">
@@ -319,7 +320,7 @@ export default function App() {
                         className="icon-btn danger"
                         title="Borrar este prompt guardado"
                         onClick={() => deleteSession(s.id)}
-                      >✕</button>
+                      ><X className="ico solo" /></button>
                     </div>
                   ))}
                   {!savedPrompts.length && (
@@ -334,19 +335,19 @@ export default function App() {
               className="tb-btn cancel"
               title="Cancelar la operación de IA en curso"
               onClick={() => { cancelActive(); setBusy(null) }}
-            >✕ Cancelar</button>
+            ><X className="ico" />Cancelar</button>
           )}
         </div>
-        <button className="btn" onClick={() => setShowStyleLab(true)} title="Extraer el ADN visual de una imagen">🧬 Style DNA</button>
-        <button className="btn" onClick={() => setShowCS(true)}>👤 Character Studio</button>
-        <button className="btn" onClick={copyPrompt} title="Copiar con # encabezados">⧉ Copiar</button>
-        <button className="btn primary" onClick={() => setShowExport(true)} title="Compilar para Midjourney, Sora, Kling, SDXL…">🎯 Exportar</button>
+        <button className="btn" onClick={() => setShowStyleLab(true)} title="Extraer el ADN visual de una imagen"><Dna className="ico" />Style DNA</button>
+        <button className="btn" onClick={() => setShowCS(true)}><UserRound className="ico" />Character Studio</button>
+        <button className="btn" onClick={copyPrompt} title="Copiar con # encabezados"><Copy className="ico" />Copiar</button>
+        <button className="btn primary" onClick={() => setShowExport(true)} title="Compilar para Midjourney, Sora, Kling, SDXL…"><Send className="ico" />Exportar</button>
         <button
           className="btn ghost"
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
-        >{theme === 'dark' ? '☀' : '🌙'}</button>
-        <button className="btn ghost" onClick={() => setShowSettings(true)} title="Ajustes">⚙</button>
+        >{theme === 'dark' ? <Sun className="ico solo" /> : <Moon className="ico solo" />}</button>
+        <button className="btn ghost" onClick={() => setShowSettings(true)} title="Ajustes"><Settings className="ico solo" /></button>
       </header>
 
       <main className="main">
@@ -375,14 +376,14 @@ export default function App() {
             onKeyDown={(e) => e.key === 'Enter' && doSmartEdit()}
           />
           <button className="btn primary" onClick={doSmartEdit} disabled={busy === 'smart'}>
-            {busy === 'smart' ? <span className="spinner" /> : '✨ '}Smart Edit
+            {busy === 'smart' ? <span className="spinner" /> : <Sparkles className="ico" />}Smart Edit
           </button>
         </div>
       )}
 
       {/* FAB + backdrop del drawer de presets (solo visibles en mobile) */}
       {!sidebarOpen && (
-        <button className="sidebar-fab" title="Presets" onClick={() => setSidebarOpen(true)}>🎛</button>
+        <button className="sidebar-fab" title="Presets" onClick={() => setSidebarOpen(true)}><SlidersHorizontal /></button>
       )}
       {sidebarOpen && <div className="drawer-backdrop" onClick={() => setSidebarOpen(false)} />}
       <PresetSidebar

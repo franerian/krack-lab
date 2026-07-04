@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import { Send, X, Sparkles, Copy } from 'lucide-react'
 import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
 import { callLLM, isReady, providerHint, cancelActive } from '../lib/anthropic.js'
 
@@ -65,8 +66,8 @@ export default function ExportModal({ sections, target, setTarget, ar, setAr, on
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-head">
-          <div className="modal-title">🎯 Exportar <span className="accent">para…</span></div>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <div className="modal-title"><Send className="ico" />Exportar <span className="accent">para…</span></div>
+          <button className="modal-close" onClick={onClose}><X className="ico solo" /></button>
         </div>
         <div className="modal-body export-body">
           <div className="export-targets">
@@ -90,7 +91,7 @@ export default function ExportModal({ sections, target, setTarget, ar, setAr, on
             )}
             {polished && (
               <div className="polish-bar">
-                <span className="metric-badge" style={{ color: 'var(--accent-soft)' }}>✨ pulido con IA</span>
+                <span className="metric-badge" style={{ color: 'var(--accent-soft)' }}><Sparkles className="ico" />pulido con IA</span>
                 <button className="btn small ghost" onClick={() => setPolished(null)}>ver compilado mecánico</button>
               </div>
             )}
@@ -107,10 +108,10 @@ export default function ExportModal({ sections, target, setTarget, ar, setAr, on
               disabled={!output}
               title="Reescribe el compilado como un prompt fluido nativo de la plataforma (una llamada de IA)"
             >
-              {polishing ? <><span className="spinner" />Cancelar</> : '✨ Pulir con IA'}
+              {polishing ? <><span className="spinner" />Cancelar</> : <><Sparkles className="ico" />Pulir con IA</>}
             </button>
           )}
-          <button className="btn primary" onClick={copy} disabled={!visible}>⧉ Copiar</button>
+          <button className="btn primary" onClick={copy} disabled={!visible}><Copy className="ico" />Copiar</button>
         </div>
       </div>
     </div>

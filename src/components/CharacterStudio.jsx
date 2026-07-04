@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react'
+import { UserRound, X, Sparkles, Save, Camera } from 'lucide-react'
 import { CHARACTER_FIELDS, CHARACTER_LOOKS, compileCharacter } from '../data/characterStudio.js'
 import { fillCharacter, isReady, providerHint } from '../lib/anthropic.js'
 import { fileToImage } from '../lib/image.js'
@@ -59,7 +60,7 @@ export default function CharacterStudio({ settings, characters, setCharacters, o
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-head">
-          <div className="modal-title">👤 Character <span className="accent">Studio</span></div>
+          <div className="modal-title"><UserRound className="ico" />Character <span className="accent">Studio</span></div>
           <div className="tabs">
             {CHARACTER_LOOKS.map((l) => (
               <button
@@ -69,7 +70,7 @@ export default function CharacterStudio({ settings, characters, setCharacters, o
               >{l.label}</button>
             ))}
           </div>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose}><X className="ico solo" /></button>
         </div>
         <div className="modal-body">
           {characters.length > 0 && (
@@ -84,7 +85,7 @@ export default function CharacterStudio({ settings, characters, setCharacters, o
                       e.stopPropagation()
                       setCharacters((prev) => prev.filter((x) => x.name !== c.name))
                     }}
-                  >✕</button>
+                  ><X className="ico solo" /></button>
                 </span>
               ))}
             </div>
@@ -118,10 +119,10 @@ export default function CharacterStudio({ settings, characters, setCharacters, o
               title={refImg ? 'Cambiar foto de referencia' : 'Subir foto de referencia'}
               onClick={() => fileRef.current?.click()}
             >
-              {refImg ? <img src={refImg.dataUrl} alt="ref" /> : '📷'}
+              {refImg ? <img src={refImg.dataUrl} alt="ref" /> : <Camera className="ico solo" />}
             </button>
             {refImg && (
-              <button className="icon-btn danger" title="Quitar foto" onClick={() => setRefImg(null)}>✕</button>
+              <button className="icon-btn danger" title="Quitar foto" onClick={() => setRefImg(null)}><X className="ico solo" /></button>
             )}
             <input
               placeholder={refImg
@@ -132,14 +133,14 @@ export default function CharacterStudio({ settings, characters, setCharacters, o
               onKeyDown={(e) => e.key === 'Enter' && handleFill()}
             />
             <button className="btn" onClick={handleFill} disabled={filling}>
-              {filling ? <span className="spinner" /> : '✨ '}{refImg ? 'Fill desde foto' : 'Fill'}
+              {filling ? <span className="spinner" /> : <Sparkles className="ico" />}{refImg ? 'Fill desde foto' : 'Fill'}
             </button>
             <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => loadRef(e.target.files[0])} />
           </div>
         </div>
         <div className="modal-foot">
           <button className="btn ghost" onClick={() => setValues({})}>Limpiar</button>
-          <button className="btn" onClick={handleSave}>💾 Guardar personaje</button>
+          <button className="btn" onClick={handleSave}><Save className="ico" />Guardar personaje</button>
           <div style={{ flex: 1 }} />
           <button
             className="btn primary"

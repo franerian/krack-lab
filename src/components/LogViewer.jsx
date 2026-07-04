@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { Bug, Copy, Download, X } from 'lucide-react'
 import { getRuns, clearRuns, runToMarkdown, allRunsToMarkdown } from '../lib/dnaLog.js'
 
 // Visor del log de corridas del DNA Lab: prompt exacto + salida cruda de
@@ -33,13 +34,13 @@ export default function LogViewer({ onClose, onCleared, toast }) {
     <div className="overlay" style={{ zIndex: 60 }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-head">
-          <div className="modal-title">🐞 DNA Lab <span className="accent">Log</span></div>
+          <div className="modal-title"><Bug className="ico" />DNA Lab <span className="accent">Log</span></div>
           <div style={{ flex: 1 }} />
-          <button className="btn small" onClick={copyOne} disabled={!run}>⧉ Copiar run</button>
-          <button className="btn small" onClick={copyAll} disabled={!runs.length}>⧉ Copiar todos</button>
-          <button className="btn small" onClick={download} disabled={!runs.length}>⭳ JSON</button>
+          <button className="btn small" onClick={copyOne} disabled={!run}><Copy className="ico" />Copiar run</button>
+          <button className="btn small" onClick={copyAll} disabled={!runs.length}><Copy className="ico" />Copiar todos</button>
+          <button className="btn small" onClick={download} disabled={!runs.length}><Download className="ico" />JSON</button>
           <button className="btn small ghost" onClick={clear} disabled={!runs.length}>Limpiar</button>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose}><X className="ico solo" /></button>
         </div>
         <div className="modal-body log-body">
           <div className="log-list">

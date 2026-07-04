@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react'
+import { Dna, Bug, X, Camera, Crosshair, Search, Printer, Copy, Bookmark } from 'lucide-react'
 import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, isReady, providerHint, cancelActive } from '../lib/anthropic.js'
 import LogViewer from './LogViewer.jsx'
 import { clipSimilarity } from '../lib/clip.js'
@@ -227,7 +228,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-head">
-          <div className="modal-title">🧬 Style <span className="accent">DNA Lab</span></div>
+          <div className="modal-title"><Dna className="ico" />Style <span className="accent">DNA Lab</span></div>
           <div className="tabs">
             <button
               className={'tab' + (mode === 'style' ? ' active' : '')}
@@ -244,8 +245,8 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
             className="btn small"
             title="Ver el log de corridas (prompts exactos y salida cruda) para iterar la calidad"
             onClick={() => setShowLog(true)}
-          >🐞 Log{runCount ? ` (${runCount})` : ''}</button>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          ><Bug className="ico" />Log{runCount ? ` (${runCount})` : ''}</button>
+          <button className="modal-close" onClick={onClose}><X className="ico solo" /></button>
         </div>
         {showLog && (
           <LogViewer
@@ -301,11 +302,11 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                   <span className="metric-badge">{metrics.aspect}</span>
                 </div>
                 {meta?.kind === 'exif' && (
-                  <div className="meta-found" title={meta.text}>📷 EXIF real: {meta.text}</div>
+                  <div className="meta-found" title={meta.text}><Camera className="ico" />EXIF real: {meta.text}</div>
                 )}
                 {meta?.kind === 'ai-prompt' && (
                   <div className="meta-found gold" title={meta.text}>
-                    🎯 ¡Prompt original embebido detectado! ({meta.source}) — se usará como fuente principal
+                    <Crosshair className="ico" />¡Prompt original embebido detectado! ({meta.source}) — se usará como fuente principal
                   </div>
                 )}
               </div>
@@ -319,7 +320,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
               Análisis profundo (Florence-2 local, ~230 MB la 1ª vez)
             </label>
             <button className="btn primary" style={{ width: '100%' }} onClick={analyze} disabled={busy || !img}>
-              {busy ? <span className="spinner" /> : '🧬 '}
+              {busy ? <span className="spinner" /> : <Dna className="ico" />}
               {busy
                 ? (pass === 'florence'
                     ? (deepStatus || 'Leyendo la imagen (Florence-2)…')
@@ -328,18 +329,18 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
             </button>
             {busy && (
               <button className="btn ghost" style={{ width: '100%' }} onClick={() => cancelActive()}>
-                ✕ Cancelar
+                <X className="ico" />Cancelar
               </button>
             )}
             {grounding && (
               <div className="grounding-info" title={groundingToText(grounding)}>
-                🔎 Florence-2: {grounding.regionCount} regiones inventariadas
+                <Search className="ico" />Florence-2: {grounding.regionCount} regiones inventariadas
                 {grounding.ocr ? ' · texto detectado' : ''} — «{grounding.caption.slice(0, 90)}…»
               </div>
             )}
             {result && (
               <div className="loop-panel">
-                <div className="metrics-title">📠 Loop de fidelidad · prompt v{version}</div>
+                <div className="metrics-title"><Printer className="ico" />Loop de fidelidad · prompt v{version}</div>
                 <div
                   className="loop-drop"
                   onClick={() => genRef.current?.click()}
@@ -380,7 +381,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                 )}
                 {genImg && !scoring && (
                   <button className="btn" style={{ width: '100%' }} onClick={refine} disabled={refining}>
-                    {refining ? <span className="spinner" /> : '📠 '}Corregir prompt → v{version + 1}
+                    {refining ? <span className="spinner" /> : <Printer className="ico" />}Corregir prompt → v{version + 1}
                   </button>
                 )}
                 <input ref={genRef} type="file" accept="image/*" hidden onChange={(e) => loadGenFile(e.target.files[0])} />
@@ -426,10 +427,10 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                   {EXPORT_ASPECT_RATIOS.map((r) => <option key={r}>{r}</option>)}
                 </select>
               )}
-              <button className="btn" onClick={copyCompiled}>⧉ Copiar</button>
+              <button className="btn" onClick={copyCompiled}><Copy className="ico" />Copiar</button>
             </>
           )}
-          <button className="btn" onClick={save} disabled={!result}>🔖 Guardar como preset</button>
+          <button className="btn" onClick={save} disabled={!result}><Bookmark className="ico" />Guardar como preset</button>
           <div style={{ flex: 1 }} />
           {mode === 'replica' && (
             <button
