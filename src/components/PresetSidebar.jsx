@@ -44,7 +44,7 @@ function Group({ label, presets, defaultOpen = false, children, count }) {
   )
 }
 
-export default function PresetSidebar({ favorites, onToggleFav, onInsert, customPresets, onDeleteCustom, sections, onHoverPreset }) {
+export default function PresetSidebar({ open, favorites, onToggleFav, onInsert, customPresets, onDeleteCustom, sections, onHoverPreset }) {
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
 
@@ -94,7 +94,7 @@ export default function PresetSidebar({ favorites, onToggleFav, onInsert, custom
   const totalShown = filtered.reduce((n, g) => n + g.presets.length, 0)
 
   return (
-    <aside className="sidebar">
+    <aside className={'sidebar' + (open ? ' open' : '')}>
       <div className="sidebar-search">
         <input
           placeholder={`Buscar en ${PRESET_GROUPS.reduce((n, g) => n + g.presets.length, 0)} presets…`}

@@ -41,7 +41,7 @@ export default function LogViewer({ onClose, onCleared, toast }) {
           <button className="btn small ghost" onClick={clear} disabled={!runs.length}>Limpiar</button>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 14 }}>
+        <div className="modal-body log-body">
           <div className="log-list">
             {!runs.length && <div className="sl-placeholder">Sin corridas aún.</div>}
             {runs.map((r, i) => (

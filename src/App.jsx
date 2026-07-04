@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Editor from './components/Editor.jsx'
 import PresetSidebar from './components/PresetSidebar.jsx'
 import CharacterStudio from './components/CharacterStudio.jsx'
@@ -35,6 +35,13 @@ export default function App() {
   const [editMenu, setEditMenu] = useState(false)
   const [promptsMenu, setPromptsMenu] = useState(false)
   const [savedPrompts, setSavedPrompts] = usePersistedState('savedPrompts', [])
+  // Tema claro/oscuro (persistido; default oscuro, identidad de la app)
+  const [theme, setTheme] = usePersistedState('theme', 'dark')
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
+  // Drawer de presets en mobile
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [hoverMark, setHoverMark] = useState(null)
   const [exportTarget, setExportTarget] = usePersistedState('exportTarget', 'structured')
   const [exportAr, setExportAr] = usePersistedState('exportAr', '16:9')
@@ -334,6 +341,11 @@ export default function App() {
         <button className="btn" onClick={() => setShowCS(true)}>👤 Character Studio</button>
         <button className="btn" onClick={copyPrompt} title="Copiar con # encabezados">⧉ Copiar</button>
         <button className="btn primary" onClick={() => setShowExport(true)} title="Compilar para Midjourney, Sora, Kling, SDXL…">🎯 Exportar</button>
+        <button
+          className="btn ghost"
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
+        >{theme === 'dark' ? '☀' : '🌙'}</button>
         <button className="btn ghost" onClick={() => setShowSettings(true)} title="Ajustes">⚙</button>
       </header>
 
@@ -368,7 +380,13 @@ export default function App() {
         </div>
       )}
 
+      {/* FAB + backdrop del drawer de presets (solo visibles en mobile) */}
+      {!sidebarOpen && (
+        <button className="sidebar-fab" title="Presets" onClick={() => setSidebarOpen(true)}>🎛</button>
+      )}
+      {sidebarOpen && <div className="drawer-backdrop" onClick={() => setSidebarOpen(false)} />}
       <PresetSidebar
+        open={sidebarOpen}
         favorites={favorites}
         onToggleFav={(id) =>
           setFavorites((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])

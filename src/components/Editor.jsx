@@ -10,8 +10,14 @@ function SectionBlock({ section, onChange, onRemove, onMove, onSaveAsPreset, aut
   useEffect(() => {
     const ta = taRef.current
     if (!ta) return
-    ta.style.height = 'auto'
-    ta.style.height = ta.scrollHeight + 'px'
+    const fit = () => {
+      ta.style.height = 'auto'
+      ta.style.height = ta.scrollHeight + 'px'
+    }
+    fit()
+    // El alto depende del ancho: recalcular en resize (rotación, drawer…).
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
   }, [section.text])
 
   useEffect(() => {
