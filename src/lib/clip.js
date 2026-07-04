@@ -8,15 +8,18 @@ let _extractor = null
 async function getExtractor(onProgress) {
   if (_extractor) return _extractor
   const { pipeline } = await import('@huggingface/transformers')
-  try {
-    _extractor = await pipeline('image-feature-extraction', MODEL_ID, {
-      device: 'webgpu', progress_callback: onProgress,
-    })
-  } catch {
-    _extractor = await pipeline('image-feature-extraction', MODEL_ID, {
-      progress_callback: onProgress,
-    })
+  if (navigator.gpu) {
+    try {
+      _extractor = await pipeline('image-feature-extraction', MODEL_ID, {
+        device: 'webgpu', progress_callback: onProgress,
+      })
+      return _extractor
+    } catch { /* cae a WASM */ }
   }
+  // CPU/WASM: dtype por defecto (compatible), funciona en cualquier navegador.
+  _extractor = await pipeline('image-feature-extraction', MODEL_ID, {
+    progress_callback: onProgress,
+  })
   return _extractor
 }
 

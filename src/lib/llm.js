@@ -157,27 +157,43 @@ export async function callGemini({ apiKey, model, system, user, maxTokens = 2000
     { text: user },
   ]
   return withAbort(180_000, async (signal) => {
-    const res = await fetch(`${GEMINI_URL}/${m}:generateContent?key=${encodeURIComponent(key)}`, {
-      method: 'POST',
-      signal,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: system }] },
-        contents: [{ role: 'user', parts }],
-        generationConfig: {
-          maxOutputTokens: maxTokens + 1024,
-          temperature: 0.7,
-          // Gemini 2.5 razona por defecto y el thinking consume el
-          // presupuesto de salida (verificado: truncaba). Se apaga.
-          thinkingConfig: { thinkingBudget: 0 },
-        },
-      }),
-    })
-    if (!res.ok) {
+    const attempt = () =>
+      fetch(`${GEMINI_URL}/${m}:generateContent?key=${encodeURIComponent(key)}`, {
+        method: 'POST',
+        signal,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: system }] },
+          contents: [{ role: 'user', parts }],
+          generationConfig: {
+            maxOutputTokens: maxTokens + 1024,
+            temperature: 0.7,
+            // Gemini 2.5 razona por defecto y el thinking consume el
+            // presupuesto de salida (verificado: truncaba). Se apaga.
+            thinkingConfig: { thinkingBudget: 0 },
+          },
+        }),
+      })
+    let res = await attempt()
+    if (res.status === 429) {
+      // El free tier limita por MINUTO además de por día. Google indica
+      // cuánto esperar (retryDelay): si es corto, se espera y reintenta
+      // solo una vez — clave con la key demo compartida entre varios.
       const body = await res.text().catch(() => '')
-      if (res.status === 429) {
-        throw new Error('Cupo demo de Gemini agotado por hoy — probá más tarde, o usá Ollama/Claude en Ajustes')
+      const delay = parseInt(body.match(/retryDelay[^\d]*(\d+)/)?.[1] || '0', 10)
+      if (delay > 0 && delay <= 35) {
+        await new Promise((r, rej) => {
+          const t = setTimeout(r, (delay + 1) * 1000)
+          signal.addEventListener('abort', () => { clearTimeout(t); rej(new Error('Cancelado')) }, { once: true })
+        })
+        res = await attempt()
       }
+    }
+    if (!res.ok) {
+      if (res.status === 429) {
+        throw new Error('Cupo del modo demo saturado (límite por minuto o diario del free tier) — esperá un minuto y reintentá; si persiste, pegá tu propia key gratis de AI Studio en Ajustes, o usá Ollama/Claude')
+      }
+      const body = await res.text().catch(() => '')
       throw new Error(`Gemini ${res.status}: ${body.slice(0, 300)}`)
     }
     const data = await res.json()

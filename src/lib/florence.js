@@ -11,21 +11,28 @@ export async function loadFlorence(onProgress) {
   if (_pipe) return _pipe
   const { Florence2ForConditionalGeneration, AutoProcessor, AutoTokenizer } =
     await import('@huggingface/transformers')
-  const dtype = {
-    embed_tokens: 'fp16',
-    vision_encoder: 'fp16',
-    encoder_model: 'q4',
-    decoder_model_merged: 'q4',
-  }
   let model
-  try {
+  // Con GPU: fp16/q4. El fallback a CPU (WASM) necesita OTRO dtype — fp16
+  // solo existe en GPU; pedirlo en WASM daba "no available backend found".
+  if (navigator.gpu) {
+    try {
+      model = await Florence2ForConditionalGeneration.from_pretrained(MODEL_ID, {
+        dtype: {
+          embed_tokens: 'fp16',
+          vision_encoder: 'fp16',
+          encoder_model: 'q4',
+          decoder_model_merged: 'q4',
+        },
+        device: 'webgpu',
+        progress_callback: onProgress,
+      })
+    } catch { /* cae al camino WASM de abajo */ }
+  }
+  if (!model) {
+    // CPU/WASM: cuantizado q8, funciona en cualquier navegador (más lento).
     model = await Florence2ForConditionalGeneration.from_pretrained(MODEL_ID, {
-      dtype, device: 'webgpu', progress_callback: onProgress,
-    })
-  } catch {
-    // Sin WebGPU: fallback a WASM (más lento pero funciona en cualquier navegador)
-    model = await Florence2ForConditionalGeneration.from_pretrained(MODEL_ID, {
-      dtype, progress_callback: onProgress,
+      dtype: 'q8',
+      progress_callback: onProgress,
     })
   }
   const processor = await AutoProcessor.from_pretrained(MODEL_ID)
