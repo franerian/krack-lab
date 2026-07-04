@@ -1,7 +1,18 @@
 import React, { useRef, useState } from 'react'
 import { Clapperboard, Sparkles, Copy } from 'lucide-react'
 import { COVERAGE_TYPES } from '../data/coverage.js'
-import { generateCoverage, offlineCoverage, isReady } from '../lib/anthropic.js'
+import { generateCoverage, offlineCoverage, isReady, textToSections } from '../lib/anthropic.js'
+
+// Los planos se muestran estructurados, pero se copian como prosa limpia:
+// los generadores no entienden los encabezados "#".
+const toProse = (text) => {
+  const sections = textToSections(text)
+  if (!sections.length) return text
+  return sections
+    .filter((s) => s.name !== 'Negative')
+    .map((s) => s.text.trim())
+    .join(' ')
+}
 
 function ShotCard({ index, label, text, toast }) {
   const [img, setImg] = useState(null)
@@ -24,8 +35,8 @@ function ShotCard({ index, label, text, toast }) {
   }
 
   const copy = () => {
-    navigator.clipboard.writeText(text)
-    toast(`Plano ${index + 1} copiado`, 'ok')
+    navigator.clipboard.writeText(toProse(text))
+    toast(`Plano ${index + 1} copiado (limpio, sin encabezados)`, 'ok')
   }
 
   // Resalta los encabezados "# Sección" en la vista del plano.
@@ -95,10 +106,10 @@ export default function StoryboardView({ sections, settings, toast }) {
   const copyAll = () => {
     if (!shots) return
     const all = shots
-      .map((s, i) => `── SHOT ${i + 1} · ${coverage.shots[i]?.label || ''} ──\n${s}`)
+      .map((s, i) => `── SHOT ${i + 1} · ${coverage.shots[i]?.label || ''} ──\n${toProse(s)}`)
       .join('\n\n')
     navigator.clipboard.writeText(all)
-    toast('Storyboard completo copiado', 'ok')
+    toast('Storyboard completo copiado (planos limpios)', 'ok')
   }
 
   return (

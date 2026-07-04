@@ -11,7 +11,7 @@ import { PRESET_GROUPS } from './data/presets.js'
 
 const ALL_INSERT_PRESETS = PRESET_GROUPS.flatMap((g) => g.presets).filter((p) => p.kind === 'insert')
 import { usePersistedState, uid } from './lib/storage.js'
-import { ACTION_LIST, runAction, runSmartEdit, sectionsToText, isReady, providerHint, cancelActive, OLLAMA_DEFAULT_URL } from './lib/anthropic.js'
+import { ACTION_LIST, runAction, runSmartEdit, isReady, providerHint, cancelActive, OLLAMA_DEFAULT_URL } from './lib/anthropic.js'
 
 const DEFAULT_SECTIONS = []
 
@@ -105,6 +105,9 @@ export default function App() {
         const existing = next.find((s) => s.name === name)
         if (existing) {
           const cur = existing.text.trim()
+          // No duplicar: si el texto ya está en la sección (ej. preset
+          // aplicado dos veces), se deja como está.
+          if (cur.includes(text.trim())) continue
           existing.text = cur ? cur + (cur.endsWith('.') ? ' ' : '. ') + text : text
         } else {
           next.push({ id: uid(), name, text })
@@ -201,11 +204,16 @@ export default function App() {
     }
   }
 
+  // Copia rápida SIN encabezados "#": los generadores no los entienden.
+  // El formato estructurado (y todos los demás) vive en Exportar.
   const copyPrompt = () => {
-    const text = sectionsToText(sections)
+    const text = sections
+      .filter((s) => s.text.trim() && s.name !== 'Negative')
+      .map((s) => s.text.trim())
+      .join(' ')
     if (!text) return toast('El prompt está vacío', 'error')
     navigator.clipboard.writeText(text)
-    toast('Prompt copiado al portapapeles', 'ok')
+    toast('Prompt copiado (limpio, sin encabezados) — otros formatos en Exportar', 'ok')
   }
 
   // Limpia el editor (el prompt anterior queda a un Undo de distancia).
@@ -340,7 +348,7 @@ export default function App() {
         </div>
         <button className="btn" onClick={() => setShowStyleLab(true)} title="Extraer el ADN visual de una imagen"><Dna className="ico" />Style DNA</button>
         <button className="btn" onClick={() => setShowCS(true)}><UserRound className="ico" />Character Studio</button>
-        <button className="btn" onClick={copyPrompt} title="Copiar con # encabezados"><Copy className="ico" />Copiar</button>
+        <button className="btn" onClick={copyPrompt} title="Copiar limpio, sin encabezados (otros formatos en Exportar)"><Copy className="ico" />Copiar</button>
         <button className="btn primary" onClick={() => setShowExport(true)} title="Compilar para Midjourney, Sora, Kling, SDXL…"><Send className="ico" />Exportar</button>
         <button
           className="btn ghost"
