@@ -374,6 +374,12 @@ body {
   font: 500 13px var(--font-ui); padding: 8px 12px; border-radius: 6px; cursor: pointer;
 }
 .menu-item:hover { color: var(--text); background: var(--bg-input); }
+.menu-divider { height: 1px; background: var(--border); margin: 4px 6px; }
+.menu-row { display: flex; align-items: center; gap: 2px; }
+.menu-row .menu-item { flex: 1; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.menu-row .menu-item > :first-child { overflow: hidden; text-overflow: ellipsis; }
+.menu-date { font: 400 10px var(--font-mono); color: var(--text-faint); margin-left: auto; flex: none; }
+.menu-empty { padding: 8px 12px; font-size: 12px; color: var(--text-faint); }
 
 /* ───────── Presets aplicados ───────── */
 .applied-dot {

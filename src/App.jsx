@@ -33,6 +33,8 @@ export default function App() {
   const [showExport, setShowExport] = useState(false)
   const [showStyleLab, setShowStyleLab] = useState(false)
   const [editMenu, setEditMenu] = useState(false)
+  const [promptsMenu, setPromptsMenu] = useState(false)
+  const [savedPrompts, setSavedPrompts] = usePersistedState('savedPrompts', [])
   const [hoverMark, setHoverMark] = useState(null)
   const [exportTarget, setExportTarget] = usePersistedState('exportTarget', 'structured')
   const [exportAr, setExportAr] = usePersistedState('exportAr', '16:9')
@@ -206,6 +208,39 @@ export default function App() {
     toast('Prompt nuevo — ↩ Undo recupera el anterior', 'ok')
   }
 
+  // ── Prompts guardados (sesiones) ──
+  const suggestName = () => {
+    const subject = sections.find((s) => s.name === 'Subject')?.text.trim()
+    const base = subject || sections.find((s) => s.text.trim())?.text.trim() || ''
+    return base ? base.split(/\s+/).slice(0, 5).join(' ').replace(/[.,;:]$/, '') : 'Prompt sin título'
+  }
+
+  const saveSession = () => {
+    if (!sections.some((s) => s.text.trim())) return toast('El prompt está vacío', 'error')
+    const name = window.prompt('Nombre del prompt:', suggestName())
+    if (!name) return
+    setSavedPrompts((prev) => [
+      { id: uid(), name, ts: Date.now(), sections: sections.map((s) => ({ ...s })) },
+      ...prev,
+    ].slice(0, 30))
+    toast(`“${name}” guardado en 📁 Prompts`, 'ok')
+  }
+
+  const loadSession = (session) => {
+    pushUndo()
+    setSections(session.sections.map((s) => ({ ...s })))
+    toast(`“${session.name}” abierto (↩ Undo vuelve al anterior)`, 'ok')
+  }
+
+  const deleteSession = (id) => {
+    setSavedPrompts((prev) => prev.filter((s) => s.id !== id))
+  }
+
+  const sessionDate = (ts) => {
+    const d = new Date(ts)
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+
 
   return (
     <div className="app">
@@ -248,6 +283,45 @@ export default function App() {
           <button className="tb-btn" onClick={undo} title="Deshacer">↩ Undo</button>
           <button className="tb-btn" onClick={redo} title="Rehacer">↪ Redo</button>
           <button className="tb-btn" onClick={clearPrompt} title="Empezar un prompt nuevo (el actual queda a un Undo)">🗑 Nuevo</button>
+          <div className="dropdown">
+            <button
+              className={'tb-btn' + (promptsMenu ? ' active' : '')}
+              onClick={() => setPromptsMenu((v) => !v)}
+              title="Prompts guardados"
+            >📁 Prompts{savedPrompts.length ? ` (${savedPrompts.length})` : ''} ▾</button>
+            {promptsMenu && (
+              <>
+                <div className="menu-backdrop" onClick={() => setPromptsMenu(false)} />
+                <div className="menu" style={{ minWidth: 260 }}>
+                  <button
+                    className="menu-item"
+                    onClick={() => { setPromptsMenu(false); saveSession() }}
+                  >💾 Guardar prompt actual</button>
+                  {savedPrompts.length > 0 && <div className="menu-divider" />}
+                  {savedPrompts.map((s) => (
+                    <div key={s.id} className="menu-row">
+                      <button
+                        className="menu-item"
+                        title={`Abrir (${s.sections.filter((x) => x.text.trim()).length} secciones)`}
+                        onClick={() => { setPromptsMenu(false); loadSession(s) }}
+                      >
+                        {s.name}
+                        <span className="menu-date">{sessionDate(s.ts)}</span>
+                      </button>
+                      <button
+                        className="icon-btn danger"
+                        title="Borrar este prompt guardado"
+                        onClick={() => deleteSession(s.id)}
+                      >✕</button>
+                    </div>
+                  ))}
+                  {!savedPrompts.length && (
+                    <div className="menu-empty">Sin prompts guardados aún.</div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           {busy && (
             <button
               className="tb-btn cancel"
