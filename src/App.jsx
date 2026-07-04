@@ -198,6 +198,14 @@ export default function App() {
     toast('Prompt copiado al portapapeles', 'ok')
   }
 
+  // Limpia el editor (el prompt anterior queda a un Undo de distancia).
+  const clearPrompt = () => {
+    if (!sections.length) return toast('El prompt ya está vacío')
+    pushUndo()
+    setSections([])
+    toast('Prompt nuevo — ↩ Undo recupera el anterior', 'ok')
+  }
+
 
   return (
     <div className="app">
@@ -239,6 +247,7 @@ export default function App() {
           </div>
           <button className="tb-btn" onClick={undo} title="Deshacer">↩ Undo</button>
           <button className="tb-btn" onClick={redo} title="Rehacer">↪ Redo</button>
+          <button className="tb-btn" onClick={clearPrompt} title="Empezar un prompt nuevo (el actual queda a un Undo)">🗑 Nuevo</button>
           {busy && (
             <button
               className="tb-btn cancel"
