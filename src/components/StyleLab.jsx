@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react'
-import { Dna, Bug, X, Camera, Crosshair, Search, Printer, Copy, Bookmark } from 'lucide-react'
+import { Dna, Bug, X, Camera, Crosshair, Search, Printer, Copy, Bookmark, ImagePlus } from 'lucide-react'
+import { generateImage } from '../lib/imageGen.js'
 import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, isReady, providerHint, cancelActive } from '../lib/anthropic.js'
 import LogViewer from './LogViewer.jsx'
 import { clipSimilarity } from '../lib/clip.js'
@@ -13,7 +14,7 @@ import { addRun, getRuns } from '../lib/dnaLog.js'
 const nowIso = () => new Date().toISOString().replace('T', ' ').slice(0, 19)
 const modelLabel = (s) => (s.provider === 'ollama' ? s.ollamaModel : s.model)
 
-export default function StyleLab({ settings, onApply, onReplace, onSavePreset, onClose, toast, target, setTarget, ar, setAr }) {
+export default function StyleLab({ settings, onApply, onReplace, onSavePreset, onClose, toast, target, setTarget, ar, setAr, imageProvider }) {
   const [img, setImg] = useState(null)
   const [mode, setMode] = useState('style')
   const [busy, setBusy] = useState(false)
@@ -124,23 +125,49 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   const toObj = () => Object.fromEntries(result.map((s) => [s.name, s.text]))
 
   // ── Loop fotocopiadora ──
+  // Procesa una generación (cargada o generada in-app): mide y puntúa.
+  const processGen = async (loaded) => {
+    setGenImg(loaded)
+    setClipScore(null)
+    setScoring(true)
+    const [gm, score] = await Promise.all([
+      measureImage(loaded.dataUrl).catch(() => null),
+      clipSimilarity(img.dataUrl, loaded.dataUrl).catch(() => null),
+    ])
+    setGenMetrics(gm)
+    setClipScore(score)
+    if (score != null) setHistory((prev) => [...prev, { v: version, score }])
+    setScoring(false)
+  }
+
   const loadGenFile = async (file) => {
     try {
-      const loaded = await fileToImage(file)
-      setGenImg(loaded)
-      setClipScore(null)
-      setScoring(true)
-      const [gm, score] = await Promise.all([
-        measureImage(loaded.dataUrl).catch(() => null),
-        clipSimilarity(img.dataUrl, loaded.dataUrl).catch(() => null),
-      ])
-      setGenMetrics(gm)
-      setClipScore(score)
-      if (score != null) setHistory((prev) => [...prev, { v: version, score }])
-      setScoring(false)
+      await processGen(await fileToImage(file))
     } catch {
       setScoring(false)
       toast('Ese archivo no es una imagen válida', 'error')
+    }
+  }
+
+  // Genera in-app desde el ADN actual (prosa estilo Flux) y mide al toque.
+  const [genBusy, setGenBusy] = useState(false)
+  const generateAndMeasure = async () => {
+    if (genBusy || !result) return
+    setGenBusy(true)
+    try {
+      const prompt = TARGETS.find((t) => t.id === 'flux').compile(result)
+      const loaded = await generateImage({
+        provider: imageProvider,
+        prompt,
+        aspectRatio: metrics?.aspectNearest || '16:9',
+        settings,
+      })
+      await processGen(loaded)
+      toast('Generada y medida — mirá el score', 'ok')
+    } catch (e) {
+      toast('Error al generar: ' + e.message, 'error')
+    } finally {
+      setGenBusy(false)
     }
   }
 
@@ -352,6 +379,16 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                     ? <img src={genImg.dataUrl} alt="generación" />
                     : <span>Arrastrá acá la imagen<br />generada con el prompt v{version}</span>}
                 </div>
+                <button
+                  className="btn small"
+                  style={{ width: '100%' }}
+                  onClick={genBusy ? () => cancelActive() : generateAndMeasure}
+                  title="Genera una imagen con el prompt actual y la mide automáticamente"
+                >
+                  {genBusy
+                    ? <><span className="spinner" />Cancelar generación</>
+                    : <><ImagePlus className="ico" />Generar y medir (gratis)</>}
+                </button>
                 {scoring && <p className="hint"><span className="spinner" />Midiendo similitud (CLIP)…</p>}
                 {clipScore != null && (
                   <div className="clip-score">

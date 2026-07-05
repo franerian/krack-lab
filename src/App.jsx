@@ -46,6 +46,7 @@ export default function App() {
   const [hoverMark, setHoverMark] = useState(null)
   const [exportTarget, setExportTarget] = usePersistedState('exportTarget', 'structured')
   const [exportAr, setExportAr] = usePersistedState('exportAr', '16:9')
+  const [imageProvider, setImageProvider] = usePersistedState('imageProvider', 'pollinations')
   const [toasts, setToasts] = useState([])
   const [lastAddedId, setLastAddedId] = useState(null)
   const undoStack = useRef([])
@@ -429,6 +430,7 @@ export default function App() {
           setTarget={setExportTarget}
           ar={exportAr}
           setAr={setExportAr}
+          imageProvider={imageProvider}
         />
       )}
       {showExport && (
@@ -441,6 +443,8 @@ export default function App() {
           onClose={() => setShowExport(false)}
           toast={toast}
           settings={settings}
+          imageProvider={imageProvider}
+          setImageProvider={setImageProvider}
         />
       )}
       {showSettings && (

@@ -35,7 +35,7 @@ export function hasActive() {
   return active.size > 0
 }
 
-async function withAbort(timeoutMs, run) {
+export async function withAbort(timeoutMs, run) {
   const ctrl = new AbortController()
   active.add(ctrl)
   const timer = setTimeout(() => ctrl.abort('timeout'), timeoutMs)

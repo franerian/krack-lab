@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react'
-import { Send, X, Sparkles, Copy } from 'lucide-react'
+import { Send, X, Sparkles, Copy, ImagePlus } from 'lucide-react'
 import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
 import { callLLM, isReady, providerHint, cancelActive } from '../lib/anthropic.js'
+import { generateImage, IMAGE_PROVIDERS } from '../lib/imageGen.js'
 
 // Pulido con IA: convierte el compilado mecánico (secciones concatenadas)
 // en UN prompt fluido nativo de la plataforma — el formato que demostró
@@ -19,7 +20,7 @@ Rewrite the compiled prompt the user gives you as ONE flowing, production-ready 
 - If the input ends with parameters (--ar, --no …) or a "Negative prompt:" block, keep them verbatim at the end.
 - English. Output ONLY the prompt, nothing else.`
 
-export default function ExportModal({ sections, target, setTarget, ar, setAr, onClose, toast, settings }) {
+export default function ExportModal({ sections, target, setTarget, ar, setAr, onClose, toast, settings, imageProvider, setImageProvider }) {
   const current = TARGETS.find((t) => t.id === target) || TARGETS[0]
   const output = useMemo(
     () => current.compile(sections, { ar }),
@@ -27,6 +28,28 @@ export default function ExportModal({ sections, target, setTarget, ar, setAr, on
   )
   const [polished, setPolished] = useState(null)
   const [polishing, setPolishing] = useState(false)
+  // Probar el prompt generando una imagen real (proveedor gratuito o propio)
+  const [genImg, setGenImg] = useState(null)
+  const [generating, setGenerating] = useState(false)
+
+  const tryPrompt = async () => {
+    if (generating) return
+    setGenerating(true)
+    try {
+      const img = await generateImage({
+        provider: imageProvider,
+        prompt: visible,
+        aspectRatio: current.usesAr ? ar : '16:9',
+        settings,
+      })
+      setGenImg(img.dataUrl)
+      toast('Imagen de prueba generada', 'ok')
+    } catch (e) {
+      toast('Error al generar: ' + e.message, 'error')
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   const visible = polished ?? output
   const canPolish = current.id !== 'structured' && current.id !== 'plain'
@@ -96,11 +119,33 @@ export default function ExportModal({ sections, target, setTarget, ar, setAr, on
               </div>
             )}
             <pre className="export-pre">{visible || '— el prompt está vacío —'}</pre>
+            {genImg && (
+              <div className="gen-preview">
+                <img src={genImg} alt="prueba generada" />
+                <button className="btn small ghost" onClick={() => setGenImg(null)}><X className="ico" />Quitar</button>
+              </div>
+            )}
           </div>
         </div>
         <div className="modal-foot">
           <span className="hint">{visible.length} caracteres</span>
           <div style={{ flex: 1 }} />
+          <select
+            className="target-select"
+            value={imageProvider}
+            onChange={(e) => setImageProvider(e.target.value)}
+            title="Proveedor para generar la imagen de prueba"
+          >
+            {IMAGE_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+          <button
+            className="btn"
+            onClick={generating ? () => cancelActive() : tryPrompt}
+            disabled={!visible}
+            title="Genera una imagen real con este prompt para probarlo"
+          >
+            {generating ? <><span className="spinner" />Cancelar</> : <><ImagePlus className="ico" />Probar</>}
+          </button>
           {canPolish && (
             <button
               className="btn"
