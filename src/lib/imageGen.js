@@ -19,6 +19,10 @@ const AR_SIZES = {
   '2:3': [810, 1216], '21:9': [1344, 576], '2.39:1': [1344, 560],
 }
 const sizeFor = (ar) => AR_SIZES[ar] || AR_SIZES['16:9']
+const ratioOf = (ar) => {
+  const [w, h] = sizeFor(ar)
+  return w / h
+}
 
 const blobToDataUrl = (blob) =>
   new Promise((resolve, reject) => {
@@ -27,6 +31,35 @@ const blobToDataUrl = (blob) =>
     fr.onerror = reject
     fr.readAsDataURL(blob)
   })
+
+const loadImage = (src) =>
+  new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
+
+// Pollinations (y otros backends "turbo") generan nativamente en cuadrado
+// y luego hacen un resize NAIVE (estiran, no recortan) al tamaño pedido —
+// verificado: mismo seed en 1:1 da un volante circular, en 16:9 el mismo
+// volante sale ovalado ~33% más ancho. Fix: pedimos siempre cuadrado y
+// recortamos nosotros al aspect ratio real (crop centrado, sin estirar ni
+// escalar hacia arriba — nunca se pierde resolución nativa).
+async function squareToAspect(dataUrl, aspectRatio) {
+  const img = await loadImage(dataUrl)
+  const ratio = ratioOf(aspectRatio)
+  const S = Math.min(img.naturalWidth, img.naturalHeight)
+  const outW = ratio >= 1 ? S : Math.round(S * ratio)
+  const outH = ratio >= 1 ? Math.round(S / ratio) : S
+  const canvas = document.createElement('canvas')
+  canvas.width = outW
+  canvas.height = outH
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(img, -(S - outW) / 2, -(S - outH) / 2, S, S)
+  const cropped = canvas.toDataURL('image/jpeg', 0.92)
+  return { dataUrl: cropped, base64: cropped.split(',')[1], mediaType: 'image/jpeg' }
+}
 
 // Los prompts compilados pueden traer encabezados "# Sección" (formato
 // estructurado), parámetros de plataforma (--ar, --no) o un bloque
@@ -51,16 +84,17 @@ export const IMAGE_PROVIDERS = [
     id: 'pollinations',
     label: 'Pollinations · Flux (gratis, sin key)',
     async generate({ prompt, aspectRatio }) {
-      const [w, h] = sizeFor(aspectRatio)
+      // Siempre se pide cuadrado (ver squareToAspect): pedir el AR real
+      // aquí produciría la imagen estirada.
       const seed = Math.floor(Math.random() * 1e9)
-      const url = `${PROXY_BASE}/api/genimg?prompt=${encodeURIComponent(prompt)}&width=${w}&height=${h}&seed=${seed}`
+      const url = `${PROXY_BASE}/api/genimg?prompt=${encodeURIComponent(prompt)}&width=1024&height=1024&seed=${seed}`
       return withAbort(180_000, async (signal) => {
         const res = await fetch(url, { signal })
         if (!res.ok) throw new Error(`Pollinations ${res.status}`)
         const blob = await res.blob()
         if (!blob.type.startsWith('image/')) throw new Error('Pollinations no devolvió una imagen')
-        const dataUrl = await blobToDataUrl(blob)
-        return { dataUrl, base64: dataUrl.split(',')[1], mediaType: blob.type }
+        const squareDataUrl = await blobToDataUrl(blob)
+        return squareToAspect(squareDataUrl, aspectRatio)
       })
     },
   },
