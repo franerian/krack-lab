@@ -1,7 +1,7 @@
 // Generación de imágenes: registro de proveedores para probar prompts sin
 // salir de KRACK. Diseñado para enchufar proveedores nuevos (fal.ai, etc.)
 // implementando solo `generate()` — la UI los lista sola.
-import { withAbort, DEMO_GEMINI_KEY } from './llm.js'
+import { withAbort } from './llm.js'
 import { textToSections } from './anthropic.js'
 
 // Pollinations exige Turnstile para fetch() de navegador → se pasa por el
@@ -100,9 +100,15 @@ export const IMAGE_PROVIDERS = [
   },
   {
     id: 'nanobanana',
-    label: 'Nano Banana · Gemini (requiere key con billing)',
+    label: 'Nano Banana · Gemini (tu propia key con billing)',
     async generate({ prompt, aspectRatio, settings }) {
-      const key = settings?.geminiKey || DEMO_GEMINI_KEY
+      // NUNCA la key demo compartida: está en el bundle público y generar
+      // imágenes se cobra (~$0.04 c/u). Nano Banana solo con la key propia
+      // que el usuario pega en Ajustes — así el demo no gasta plata de nadie.
+      const key = settings?.geminiKey
+      if (!key) {
+        throw new Error('Nano Banana cobra por imagen (~$0.04). Pegá TU propia key de Gemini en Ajustes para usarlo; para pruebas gratis usá Pollinations.')
+      }
       return withAbort(180_000, async (signal) => {
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(key)}`,
