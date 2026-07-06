@@ -3,6 +3,7 @@ import { Send, X, Sparkles, Copy, ImagePlus } from 'lucide-react'
 import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
 import { callLLM, isReady, providerHint, cancelActive } from '../lib/anthropic.js'
 import { generateImage, IMAGE_PROVIDERS } from '../lib/imageGen.js'
+import ImageResult from './ImageResult.jsx'
 
 // Pulido con IA: convierte el compilado mecánico (secciones concatenadas)
 // en UN prompt fluido nativo de la plataforma — el formato que demostró
@@ -120,10 +121,7 @@ export default function ExportModal({ sections, target, setTarget, ar, setAr, on
             )}
             <pre className="export-pre">{visible || '— el prompt está vacío —'}</pre>
             {genImg && (
-              <div className="gen-preview">
-                <img src={genImg} alt="prueba generada" />
-                <button className="btn small ghost" onClick={() => setGenImg(null)}><X className="ico" />Quitar</button>
-              </div>
+              <ImageResult src={genImg} onRemove={() => setGenImg(null)} name={`krack-${current.id}`} />
             )}
           </div>
         </div>

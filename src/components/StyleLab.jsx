@@ -3,6 +3,7 @@ import { Dna, Bug, X, Camera, Crosshair, Search, Printer, Copy, Bookmark, ImageP
 import { generateImage } from '../lib/imageGen.js'
 import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, isReady, providerHint, cancelActive } from '../lib/anthropic.js'
 import LogViewer from './LogViewer.jsx'
+import ImageResult from './ImageResult.jsx'
 import { clipSimilarity } from '../lib/clip.js'
 import { fileToImage } from '../lib/image.js'
 import { measureImage, extractFileMetadata, measurementsToText } from '../lib/imageAnalysis.js'
@@ -368,17 +369,23 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
             {result && (
               <div className="loop-panel">
                 <div className="metrics-title"><Printer className="ico" />Loop de fidelidad · prompt v{version}</div>
-                <div
-                  className="loop-drop"
-                  onClick={() => genRef.current?.click()}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { e.preventDefault(); loadGenFile(e.dataTransfer.files[0]) }}
-                  title="Generá una imagen con este prompt en tu plataforma y traela acá para medir la fidelidad"
-                >
-                  {genImg
-                    ? <img src={genImg.dataUrl} alt="generación" />
-                    : <span>Arrastrá acá la imagen<br />generada con el prompt v{version}</span>}
-                </div>
+                {genImg ? (
+                  <ImageResult
+                    src={genImg.dataUrl}
+                    onRemove={() => { setGenImg(null); setClipScore(null) }}
+                    name={`krack-gen-v${version}`}
+                  />
+                ) : (
+                  <div
+                    className="loop-drop"
+                    onClick={() => genRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => { e.preventDefault(); loadGenFile(e.dataTransfer.files[0]) }}
+                    title="Generá una imagen con este prompt en tu plataforma y traela acá para medir la fidelidad"
+                  >
+                    <span>Arrastrá acá la imagen<br />generada con el prompt v{version}</span>
+                  </div>
+                )}
                 <button
                   className="btn small"
                   style={{ width: '100%' }}
