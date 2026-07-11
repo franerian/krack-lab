@@ -7,11 +7,13 @@ import StoryboardView from './components/StoryboardView.jsx'
 import SettingsModal from './components/SettingsModal.jsx'
 import ExportModal from './components/ExportModal.jsx'
 import StyleLab from './components/StyleLab.jsx'
+import ComposeBar from './components/ComposeBar.jsx'
 import { PRESET_GROUPS } from './data/presets.js'
 
 const ALL_INSERT_PRESETS = PRESET_GROUPS.flatMap((g) => g.presets).filter((p) => p.kind === 'insert')
 import { usePersistedState, uid } from './lib/storage.js'
-import { ACTION_LIST, runAction, runSmartEdit, isReady, providerHint, cancelActive, OLLAMA_DEFAULT_URL } from './lib/anthropic.js'
+import { ACTION_LIST, runAction, runSmartEdit, analyzeImageStyle, isReady, providerHint, cancelActive, OLLAMA_DEFAULT_URL } from './lib/anthropic.js'
+import { measureImage, extractFileMetadata, measurementsToText } from './lib/imageAnalysis.js'
 
 const DEFAULT_SECTIONS = []
 
@@ -29,6 +31,7 @@ export default function App() {
   const [view, setView] = useState('editor')
   const [busy, setBusy] = useState(null)
   const [instruction, setInstruction] = useState('')
+  const [composeImage, setComposeImage] = useState(null)
   const [showCS, setShowCS] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showExport, setShowExport] = useState(false)
@@ -183,21 +186,47 @@ export default function App() {
     }
   }
 
-  const doSmartEdit = async () => {
+  // Compositor único (texto y/o imagen): con solo texto funciona como el
+  // Smart Edit de siempre; con imagen dispara una extracción de ADN liviana
+  // (mismo motor que el Style DNA Lab) y la fusiona en el prompt. El texto,
+  // si lo hay, viaja como guía de esa extracción. El Lab completo — con
+  // autocrítica, análisis profundo y loop de fidelidad — sigue intacto y
+  // aparte para cuando se necesita ese control fino; esto es el on-ramp rápido.
+  const doCompose = async () => {
     if (busy) return
     const ins = instruction.trim()
-    if (!ins) return
+    if (!ins && !composeImage) return
     if (!isReady(settings)) {
       setShowSettings(true)
       return toast(providerHint(settings), 'error')
     }
     setBusy('smart')
     try {
-      pushUndo()
-      const parsed = await runSmartEdit({ settings, instruction: ins, sections })
-      applyParsed(parsed)
-      setInstruction('')
-      toast('Smart Edit aplicado ✓', 'ok')
+      if (composeImage) {
+        const [metrics, meta] = await Promise.all([
+          measureImage(composeImage.dataUrl).catch(() => null),
+          extractFileMetadata(composeImage.file).catch(() => null),
+        ])
+        const measurements = measurementsToText(metrics, meta)
+        // Prompt vacío → reconstruye la escena completa desde la imagen;
+        // prompt con contenido → extrae solo el estilo y lo capa encima
+        // (la imagen es la causa, lo que ya escribiste es la consecuencia
+        // que se mejora, no se reemplaza).
+        const mode = sections.some((s) => s.text.trim()) ? 'style' : 'replica'
+        const { sections: extracted } = await analyzeImageStyle({
+          settings, image: composeImage, mode, measurements, hint: ins,
+        })
+        mergeSections(Object.fromEntries(extracted.map((s) => [s.name, s.text])))
+        setComposeImage(null)
+        setInstruction('')
+        toast(mode === 'replica' ? 'Escena extraída de la imagen ✓' : 'ADN de estilo aplicado ✓', 'ok')
+      } else {
+        pushUndo()
+        const parsed = await runSmartEdit({ settings, instruction: ins, sections })
+        applyParsed(parsed)
+        setInstruction('')
+        toast('Smart Edit aplicado ✓', 'ok')
+      }
     } catch (e) {
       toast('Error: ' + e.message, 'error')
     } finally {
@@ -377,17 +406,15 @@ export default function App() {
       </main>
 
       {view === 'editor' && (
-        <div className="smartbar">
-          <input
-            placeholder='Smart Edit — escribí una instrucción… ej: "cambiá la luz a un día nublado"'
-            value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && doSmartEdit()}
-          />
-          <button className="btn primary" onClick={doSmartEdit} disabled={busy === 'smart'}>
-            {busy === 'smart' ? <span className="spinner" /> : <Sparkles className="ico" />}Smart Edit
-          </button>
-        </div>
+        <ComposeBar
+          instruction={instruction}
+          setInstruction={setInstruction}
+          image={composeImage}
+          setImage={setComposeImage}
+          onSubmit={doCompose}
+          busy={busy === 'smart'}
+          hasContent={sections.some((s) => s.text.trim())}
+        />
       )}
 
       {/* FAB + backdrop del drawer de presets (solo visibles en mobile) */}

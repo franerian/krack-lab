@@ -226,12 +226,13 @@ ${mode === 'replica' ? '# Subject\n(scene content, filtered through the DNA)\n\n
 # Negative
 avoid: (elements that would break this DNA)`
 
-export async function analyzeImageStyle({ settings, image, mode = 'style', measurements = '' }) {
+export async function analyzeImageStyle({ settings, image, mode = 'style', measurements = '', hint = '' }) {
   const base = mode === 'style'
     ? 'Extract the Style DNA of this image. Style only — the content will be replaced by other scenes.'
     : 'Deconstruct this image into a full replication prompt, Style DNA first.'
   const system = DNA_SYSTEM(mode)
-  const user = measurements ? `${base}\n\n${measurements}` : base
+  const withHint = hint.trim() ? `${base}\n\nUSER GUIDANCE (apply while extracting): ${hint.trim()}` : base
+  const user = measurements ? `${withHint}\n\n${measurements}` : withHint
   const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, image })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
   const sections = parsed.filter((s) => !banned.includes(s.name))
