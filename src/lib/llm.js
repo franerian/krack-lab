@@ -35,7 +35,7 @@ export function hasActive() {
   return active.size > 0
 }
 
-export async function withAbort(timeoutMs, run) {
+export async function withAbort(timeoutMs, run, netHint) {
   const ctrl = new AbortController()
   active.add(ctrl)
   const timer = setTimeout(() => ctrl.abort('timeout'), timeoutMs)
@@ -48,6 +48,11 @@ export async function withAbort(timeoutMs, run) {
           ? 'TIMEOUT — el modelo no respondió a tiempo'
           : 'Cancelado'
       )
+    }
+    // "Failed to fetch" / TypeError = fallo de red antes de tocar el servidor
+    // (proveedor caído, sin conexión, o CORS). El mensaje crudo no ayuda.
+    if (e instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(e.message || '')) {
+      throw new Error(netHint || 'No se pudo conectar con el proveedor de IA (red, CORS o servicio caído). Revisá tu conexión y el proveedor en Ajustes.')
     }
     throw e
   } finally {
@@ -96,7 +101,7 @@ export async function callClaude({ apiKey, model, system, user, maxTokens = 2000
     }
     const data = await res.json()
     return data.content?.map((b) => b.text || '').join('') || ''
-  })
+  }, 'No se pudo conectar con la API de Anthropic (red o CORS). Revisá tu conexión.')
 }
 
 export async function callOllama({ url, model, system, user, maxTokens = 2000, image, images }) {
@@ -143,7 +148,7 @@ export async function callOllama({ url, model, system, user, maxTokens = 2000, i
       throw new Error('El modelo agotó la respuesta razonando — probá de nuevo o usá un modelo sin razonamiento')
     }
     return content
-  })
+  }, `No se pudo conectar con Ollama en ${base}. Verificá que esté corriendo (ollama serve) y que el origen esté permitido — o cambiá a Demo (Gemini) en Ajustes.`)
 }
 
 export async function callGemini({ apiKey, model, system, user, maxTokens = 2000, image, images }) {
@@ -203,7 +208,7 @@ export async function callGemini({ apiKey, model, system, user, maxTokens = 2000
       throw new Error(`Gemini no devolvió texto (${reason})`)
     }
     return text
-  })
+  }, 'No se pudo conectar con Gemini (red o CORS). Revisá tu conexión — si el problema sigue, probá con tu propia key en Ajustes.')
 }
 
 export async function listOllamaModels(url) {
