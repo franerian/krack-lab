@@ -226,14 +226,18 @@ ${mode === 'replica' ? '# Subject\n(scene content, filtered through the DNA)\n\n
 # Negative
 avoid: (elements that would break this DNA)`
 
-export async function analyzeImageStyle({ settings, image, mode = 'style', measurements = '', hint = '' }) {
-  const base = mode === 'style'
-    ? 'Extract the Style DNA of this image. Style only — the content will be replaced by other scenes.'
-    : 'Deconstruct this image into a full replication prompt, Style DNA first.'
+export async function analyzeImageStyle({ settings, image, images, mode = 'style', measurements = '', hint = '' }) {
+  const imgs = images && images.length ? images : (image ? [image] : [])
+  const multi = imgs.length > 1
+  const base = multi
+    ? `You are given ${imgs.length} reference images that SHARE ONE common visual style (a moodboard). Extract ONLY the Style DNA that is CONSISTENT across ALL of them — the medium, execution rules, lighting, palette and mood they have in common. IGNORE the specific subject/content of any single image; the style will be applied to completely different scenes.`
+    : mode === 'style'
+      ? 'Extract the Style DNA of this image. Style only — the content will be replaced by other scenes.'
+      : 'Deconstruct this image into a full replication prompt, Style DNA first.'
   const system = DNA_SYSTEM(mode)
   const withHint = hint.trim() ? `${base}\n\nUSER GUIDANCE (apply while extracting): ${hint.trim()}` : base
   const user = measurements ? `${withHint}\n\n${measurements}` : withHint
-  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, image })
+  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: imgs })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
   const sections = parsed.filter((s) => !banned.includes(s.name))
   const trace = { pass: 'extract', system, user, raw, retried }
@@ -263,11 +267,13 @@ PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference �
   return { sections, trace }
 }
 
-export async function critiqueStyleDNA({ settings, image, draft, mode = 'style', measurements = '' }) {
+export async function critiqueStyleDNA({ settings, image, images, draft, mode = 'style', measurements = '' }) {
+  const imgs = images && images.length ? images : (image ? [image] : [])
+  const multi = imgs.length > 1
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
   const system = DNA_SYSTEM(mode) + `
 
-VERIFICATION MODE: you receive a DRAFT prompt produced from this same image. Audit it against this CHECKLIST, item by item, and fix EVERY failure:
+VERIFICATION MODE: you receive a DRAFT prompt produced from ${multi ? `these ${imgs.length} reference images that share ONE common style` : 'this same image'}. Audit it against this CHECKLIST, item by item, and fix EVERY failure:${multi ? '\n0. SHARED STYLE — the DNA must describe only what is CONSISTENT across all images; drop anything specific to a single image.' : ''}
 1. MEDIUM — is the Step-0 medium right? 3D perspective + faceted geometry = 3D render, never "2D illustration"; no photo tells = never "photography".
 2. TIME & BRIGHTNESS — does the wording match the measured brightness? ≤3/10 and any form of "day/daylight" appears = FAILURE, rewrite as dusk/night.
 3. LIGHTS — is every visible light present AND attributed to its emitting object (headlights, radio dial, lamp, sky)? A glow with no named source = failure.
@@ -279,7 +285,7 @@ VERIFICATION MODE: you receive a DRAFT prompt produced from this same image. Aud
 9. EXAGGERATIONS & CONTRADICTIONS — any wording stronger than what the image shows, or violating the measurements or the DNA itself.
 Output the CORRECTED full prompt in the exact same section format — nothing else. Keep what the draft got right.`
   const user = `DRAFT TO VERIFY:\n${draftText}${measurements ? `\n\n${measurements}` : ''}`
-  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, image })
+  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: imgs })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
   const sections = mergeOverDraft(draft, parsed.filter((s) => !banned.includes(s.name)))
   const trace = { pass: 'critique', system, user, raw, retried }

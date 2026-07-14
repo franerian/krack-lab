@@ -302,3 +302,76 @@ export function measurementsToText(m, meta) {
   }
   return lines.join('\n')
 }
+
+// ── Agregación de mediciones de varias imágenes de referencia (moodboard) ──
+const hexToRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]
+
+// Fusiona colores cercanos de varias imágenes: promedia el % sobre el total
+// de imágenes (un color presente en 1 de 3 pesa 1/3), agrupa por distancia.
+function poolColors(colors, imageCount) {
+  const groups = []
+  for (const c of colors) {
+    const rgb = hexToRgb(c.hex)
+    const near = groups.find((g) => dist2(g.rgb, rgb) < 30 * 30)
+    if (near) { near.sum += c.pct; near.n++ }
+    else groups.push({ rgb, hex: c.hex, sum: c.pct, n: 1 })
+  }
+  return groups
+    .map((g) => ({ hex: g.hex, pct: Math.round(g.sum / imageCount) }))
+    .filter((c) => c.pct > 0)
+    .sort((a, b) => b.pct - a.pct)
+}
+
+// Objeto de métricas agregadas (para el panel de UI y el texto del prompt).
+export function aggregateMetrics(list) {
+  const n = list.length
+  if (!n) return null
+  if (n === 1) return list[0]
+  const avg = (k) => Math.round(list.reduce((s, m) => s + (m[k] || 0), 0) / n)
+  const brightness10 = avg('brightness10')
+  const aspects = [...new Set(list.map((m) => m.aspect))]
+  return {
+    count: n,
+    palette: poolColors(list.flatMap((m) => m.palette || []), n).slice(0, 6),
+    accents: poolColors(list.flatMap((m) => m.accents || []), n).slice(0, 4),
+    contrast10: avg('contrast10'),
+    saturation10: avg('saturation10'),
+    brightness10,
+    key: brightness10 >= 7 ? 'high-key' : brightness10 <= 3 ? 'low-key' : 'balanced',
+    aspect: aspects.length === 1 ? aspects[0] : 'mixto',
+    ranges: {
+      contrast: [Math.min(...list.map((m) => m.contrast10)), Math.max(...list.map((m) => m.contrast10))],
+      saturation: [Math.min(...list.map((m) => m.saturation10)), Math.max(...list.map((m) => m.saturation10))],
+      brightness: [Math.min(...list.map((m) => m.brightness10)), Math.max(...list.map((m) => m.brightness10))],
+    },
+  }
+}
+
+const range = (r) => (r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`)
+
+// Texto de mediciones para N imágenes que comparten un estilo.
+export function multiMeasurementsToText(items) {
+  const metricsList = items.map((it) => it.metrics).filter(Boolean)
+  if (metricsList.length < 2) {
+    return measurementsToText(items[0]?.metrics, items[0]?.meta)
+  }
+  const agg = aggregateMetrics(metricsList)
+  const lines = [
+    `MEASURED GROUND TRUTH — ${items.length} REFERENCE IMAGES SHARING ONE STYLE (computed from pixels; these are FACTS. Describe only what is CONSISTENT across the set):`,
+    `- Combined dominant palette (avg % across the set): ${agg.palette.map((c) => `${c.hex} (${c.pct}%)`).join(', ')}`,
+    ...(agg.accents.length
+      ? [`- Combined ACCENT colors (small area but DEFINING — each MUST be named in # Color): ${agg.accents.map((c) => c.hex).join(', ')}`]
+      : []),
+    `- Brightness: avg ${agg.brightness10}/10 (range ${range(agg.ranges.brightness)}) → ${agg.key}`,
+    `- Contrast: avg ${agg.contrast10}/10 (range ${range(agg.ranges.contrast)})`,
+    `- Saturation: avg ${agg.saturation10}/10 (range ${range(agg.ranges.saturation)})`,
+    '- Per-image dominant palettes (for reference):',
+    ...metricsList.map((m, i) => `  · Image ${i + 1}: ${m.palette.slice(0, 5).map((c) => c.hex).join(' ')}`),
+  ]
+  // Metadata embebida por imagen (EXIF / prompt original) si la hay.
+  items.forEach((it, i) => {
+    if (it.meta?.kind === 'exif') lines.push(`- Image ${i + 1} CAMERA EXIF: ${it.meta.text}`)
+    if (it.meta?.kind === 'ai-prompt') lines.push(`- Image ${i + 1} EMBEDDED PROMPT (${it.meta.source}): ${it.meta.text.slice(0, 500)}`)
+  })
+  return lines.join('\n')
+}

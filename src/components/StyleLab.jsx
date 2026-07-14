@@ -1,12 +1,12 @@
 import React, { useRef, useState } from 'react'
-import { Dna, Bug, X, Camera, Crosshair, Search, Printer, Copy, Bookmark, ImagePlus } from 'lucide-react'
+import { Dna, Bug, X, Camera, Crosshair, Search, Printer, Copy, Bookmark, ImagePlus, Plus } from 'lucide-react'
 import { generateImage } from '../lib/imageGen.js'
 import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, isReady, providerHint, cancelActive } from '../lib/anthropic.js'
 import LogViewer from './LogViewer.jsx'
 import ImageResult from './ImageResult.jsx'
 import { clipSimilarity } from '../lib/clip.js'
 import { fileToImage } from '../lib/image.js'
-import { measureImage, extractFileMetadata, measurementsToText } from '../lib/imageAnalysis.js'
+import { measureImage, extractFileMetadata, measurementsToText, multiMeasurementsToText, aggregateMetrics } from '../lib/imageAnalysis.js'
 import { florenceGrounding, groundingToText } from '../lib/florence.js'
 import { highlightHtml } from '../lib/highlight.js'
 import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
@@ -15,8 +15,12 @@ import { addRun, getRuns } from '../lib/dnaLog.js'
 const nowIso = () => new Date().toISOString().replace('T', ' ').slice(0, 19)
 const modelLabel = (s) => (s.provider === 'ollama' ? s.ollamaModel : s.model)
 
+const MAX_REFS = 5
+
 export default function StyleLab({ settings, onApply, onReplace, onSavePreset, onClose, toast, target, setTarget, ar, setAr, imageProvider }) {
-  const [img, setImg] = useState(null)
+  // Referencias de estilo: 1 en modo réplica, hasta MAX_REFS en "solo estilo".
+  // Cada item: { dataUrl, base64, mediaType, file, metrics, meta }.
+  const [images, setImages] = useState([])
   const [mode, setMode] = useState('style')
   const [busy, setBusy] = useState(false)
   const [pass, setPass] = useState(0) // 0 idle | 'florence' | 1 extracción | 2 autocrítica
@@ -25,10 +29,18 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   const [deepStatus, setDeepStatus] = useState('')
   const [grounding, setGrounding] = useState(null)
   const [result, setResult] = useState(null)
-  const [metrics, setMetrics] = useState(null)
-  const [meta, setMeta] = useState(null)
   const [drag, setDrag] = useState(false)
   const fileRef = useRef(null)
+  const addRef = useRef(null)
+
+  // La primera imagen es la de referencia del loop; sus métricas alimentan el
+  // comparador. El panel de mediciones muestra el agregado si hay varias.
+  const primary = images[0] || null
+  const metrics = primary?.metrics || null
+  const meta = primary?.meta || null
+  const panelMetrics = images.length > 1
+    ? aggregateMetrics(images.map((i) => i.metrics).filter(Boolean))
+    : metrics
   // Loop fotocopiadora
   const [genImg, setGenImg] = useState(null)
   const [genMetrics, setGenMetrics] = useState(null)
@@ -42,31 +54,48 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   const [showLog, setShowLog] = useState(false)
   const [runCount, setRunCount] = useState(() => getRuns().length)
 
-  const loadFile = async (file) => {
-    try {
-      const loaded = await fileToImage(file)
-      setImg(loaded)
-      setResult(null)
-      setGrounding(null)
-      setGenImg(null)
-      setClipScore(null)
-      setVersion(1)
-      setHistory([])
-      // Mediciones objetivas: paleta, contraste, saturación, AR + metadata
-      // embebida (EXIF / prompt de generadores IA). Instantáneo, sin IA.
-      setMetrics(await measureImage(loaded.dataUrl).catch(() => null))
-      setMeta(await extractFileMetadata(file))
-    } catch {
-      toast('Ese archivo no es una imagen válida', 'error')
+  // Al cambiar el set de referencias, se invalida el análisis previo.
+  const resetAnalysis = () => {
+    setResult(null); setGrounding(null); setGenImg(null)
+    setClipScore(null); setVersion(1); setHistory([])
+  }
+
+  // Carga y mide una o varias imágenes. En réplica reemplaza (una sola);
+  // en "solo estilo" agrega hasta MAX_REFS.
+  const addFiles = async (fileList) => {
+    const files = [...(fileList || [])].filter((f) => f && f.type.startsWith('image/'))
+    if (!files.length) return
+    const loaded = []
+    for (const file of files) {
+      try {
+        const im = await fileToImage(file)
+        // Mediciones objetivas + metadata embebida (EXIF / prompt), sin IA.
+        const [m, mt] = await Promise.all([
+          measureImage(im.dataUrl).catch(() => null),
+          extractFileMetadata(file),
+        ])
+        loaded.push({ ...im, file, metrics: m, meta: mt })
+      } catch {
+        toast('Ese archivo no es una imagen válida', 'error')
+      }
     }
+    if (!loaded.length) return
+    setImages((prev) => (mode === 'replica' ? loaded.slice(0, 1) : [...prev, ...loaded].slice(0, MAX_REFS)))
+    resetAnalysis()
+  }
+
+  const removeImage = (idx) => {
+    setImages((prev) => prev.filter((_, i) => i !== idx))
+    resetAnalysis()
   }
 
   const analyze = async () => {
     if (busy) return
-    if (!img) return toast('Cargá primero una imagen de referencia', 'error')
+    if (!images.length) return toast('Cargá primero una imagen de referencia', 'error')
     if (!isReady(settings)) return toast(providerHint(settings), 'error')
     setBusy(true)
-    let measurements = measurementsToText(metrics, meta)
+    const imgPayload = images.map((i) => ({ base64: i.base64, mediaType: i.mediaType }))
+    let measurements = images.length > 1 ? multiMeasurementsToText(images) : measurementsToText(metrics, meta)
     try {
       if (deep) {
         // Pasada Florence-2: inventario objetivo por regiones + OCR, en el
@@ -74,7 +103,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
         // un parse error), se reutiliza — grounding se resetea al cargar otra.
         setPass('florence')
         try {
-          const g = grounding || await florenceGrounding(img.dataUrl, (p) => {
+          const g = grounding || await florenceGrounding(primary.dataUrl, (p) => {
             if (p.status === 'progress' && p.file?.endsWith('.onnx')) {
               setDeepStatus(`Descargando Florence-2… ${Math.round(p.progress || 0)}%`)
             } else if (p.status === 'done') {
@@ -90,13 +119,13 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
       }
       const passes = []
       setPass(1)
-      let r = await analyzeImageStyle({ settings, image: img, mode, measurements })
+      let r = await analyzeImageStyle({ settings, images: imgPayload, mode, measurements })
       passes.push(r.trace)
       let sections = r.sections
       if (verify) {
         setPass(2)
         setResult(sections) // muestra el borrador mientras verifica
-        r = await critiqueStyleDNA({ settings, image: img, draft: sections, mode, measurements })
+        r = await critiqueStyleDNA({ settings, images: imgPayload, draft: sections, mode, measurements })
         passes.push(r.trace)
         sections = r.sections
       }
@@ -133,7 +162,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     setScoring(true)
     const [gm, score] = await Promise.all([
       measureImage(loaded.dataUrl).catch(() => null),
-      clipSimilarity(img.dataUrl, loaded.dataUrl).catch(() => null),
+      clipSimilarity(primary.dataUrl, loaded.dataUrl).catch(() => null),
     ])
     setGenMetrics(gm)
     setClipScore(score)
@@ -220,7 +249,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     const comparisonData = comparisonText()
     try {
       const r = await refineFromComparison({
-        settings, original: img, generated: genImg, draft: result, mode, comparisonData,
+        settings, original: primary, generated: genImg, draft: result, mode, comparisonData,
       })
       setResult(r.sections)
       setVersion((v) => v + 1)
@@ -261,12 +290,12 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
             <button
               className={'tab' + (mode === 'style' ? ' active' : '')}
               onClick={() => { setMode('style'); setResult(null) }}
-              title="Solo el tratamiento visual, transferible a cualquier escena"
+              title="Solo el tratamiento visual, transferible a cualquier escena. Podés combinar varias imágenes de referencia."
             >Solo estilo (ADN)</button>
             <button
               className={'tab' + (mode === 'replica' ? ' active' : '')}
-              onClick={() => { setMode('replica'); setResult(null) }}
-              title="Reconstruye también el sujeto y la escena"
+              onClick={() => { setMode('replica'); setResult(null); setImages((p) => p.slice(0, 1)) }}
+              title="Reconstruye también el sujeto y la escena. Una sola imagen."
             >Réplica completa</button>
           </div>
           <button
@@ -285,23 +314,52 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
         )}
         <div className="modal-body sl-body">
           <div className="sl-left">
-            <div
-              className={'sl-drop' + (drag ? ' dragover' : '')}
-              onClick={() => fileRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
-              onDragLeave={() => setDrag(false)}
-              onDrop={(e) => { e.preventDefault(); setDrag(false); loadFile(e.dataTransfer.files[0]) }}
-              onPaste={(e) => loadFile(e.clipboardData.files[0])}
-            >
-              {img
-                ? <img src={img.dataUrl} alt="referencia" />
-                : <span>Arrastrá, pegá o clickeá<br />para cargar la imagen de referencia</span>}
-            </div>
-            {metrics && (
+            {images.length === 0 ? (
+              <div
+                className={'sl-drop' + (drag ? ' dragover' : '')}
+                onClick={() => fileRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
+                onDragLeave={() => setDrag(false)}
+                onDrop={(e) => { e.preventDefault(); setDrag(false); addFiles(e.dataTransfer.files) }}
+                onPaste={(e) => addFiles(e.clipboardData.files)}
+              >
+                <span>
+                  Arrastrá, pegá o clickeá<br />para cargar {mode === 'style' ? 'imágenes' : 'la imagen'} de referencia
+                  {mode === 'style' && <><br /><span className="sl-drop-sub">podés combinar varias — se extrae el estilo común</span></>}
+                </span>
+              </div>
+            ) : (
+              <div className="ref-strip">
+                {images.map((im, i) => (
+                  <div className="ref-thumb" key={im.dataUrl.slice(-24) + i}>
+                    <img src={im.dataUrl} alt={`referencia ${i + 1}`} />
+                    {i === 0 && images.length > 1 && <span className="ref-badge" title="Referencia del loop de fidelidad">1ª</span>}
+                    <button className="ref-remove" title="Quitar" onClick={() => removeImage(i)}><X className="ico solo" /></button>
+                  </div>
+                ))}
+                {mode === 'style' && images.length < MAX_REFS && (
+                  <button
+                    className={'ref-add' + (drag ? ' dragover' : '')}
+                    onClick={() => addRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
+                    onDragLeave={() => setDrag(false)}
+                    onDrop={(e) => { e.preventDefault(); setDrag(false); addFiles(e.dataTransfer.files) }}
+                    title="Agregar otra imagen de referencia"
+                  >
+                    <Plus className="ico solo" /><span>sumar</span>
+                  </button>
+                )}
+              </div>
+            )}
+            <input ref={addRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
+            {panelMetrics && (
               <div className="metrics-panel">
-                <div className="metrics-title">Mediciones (código, no IA)</div>
+                <div className="metrics-title">
+                  Mediciones (código, no IA)
+                  {images.length > 1 && <span className="metrics-sub"> · promedio de {images.length} imágenes</span>}
+                </div>
                 <div className="palette-row">
-                  {metrics.palette.map((c) => (
+                  {panelMetrics.palette.map((c) => (
                     <span
                       key={c.hex}
                       className="swatch"
@@ -310,10 +368,10 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                     />
                   ))}
                 </div>
-                {metrics.accents?.length > 0 && (
+                {panelMetrics.accents?.length > 0 && (
                   <div className="accent-row" title="Colores de poca área pero visualmente definitorios (detectados como outliers cromáticos)">
                     <span className="accent-label">acentos</span>
-                    {metrics.accents.map((c) => (
+                    {panelMetrics.accents.map((c) => (
                       <span
                         key={c.hex}
                         className="accent-chip"
@@ -324,15 +382,15 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                   </div>
                 )}
                 <div className="metric-badges">
-                  <span className="metric-badge" title="Desviación tonal medida">Contraste {metrics.contrast10}/10</span>
-                  <span className="metric-badge">Saturación {metrics.saturation10}/10</span>
-                  <span className="metric-badge">{metrics.key}</span>
-                  <span className="metric-badge">{metrics.aspect}</span>
+                  <span className="metric-badge" title="Desviación tonal medida">Contraste {panelMetrics.contrast10}/10</span>
+                  <span className="metric-badge">Saturación {panelMetrics.saturation10}/10</span>
+                  <span className="metric-badge">{panelMetrics.key}</span>
+                  <span className="metric-badge">{panelMetrics.aspect}</span>
                 </div>
-                {meta?.kind === 'exif' && (
+                {images.length === 1 && meta?.kind === 'exif' && (
                   <div className="meta-found" title={meta.text}><Camera className="ico" />EXIF real: {meta.text}</div>
                 )}
-                {meta?.kind === 'ai-prompt' && (
+                {images.length === 1 && meta?.kind === 'ai-prompt' && (
                   <div className="meta-found gold" title={meta.text}>
                     <Crosshair className="ico" />¡Prompt original embebido detectado! ({meta.source}) — se usará como fuente principal
                   </div>
@@ -347,7 +405,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
               <input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} />
               Análisis profundo (Florence-2 local, ~230 MB la 1ª vez)
             </label>
-            <button className="btn primary" style={{ width: '100%' }} onClick={analyze} disabled={busy || !img}>
+            <button className="btn primary" style={{ width: '100%' }} onClick={analyze} disabled={busy || !images.length}>
               {busy ? <span className="spinner" /> : <Dna className="ico" />}
               {busy
                 ? (pass === 'florence'
@@ -489,7 +547,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
             onClick={() => { onApply(toObj()); onClose() }}
           >Aplicar al prompt →</button>
         </div>
-        <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => loadFile(e.target.files[0])} />
+        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
       </div>
     </div>
   )
