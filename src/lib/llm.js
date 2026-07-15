@@ -3,8 +3,12 @@
 // en anthropic.js (acciones) — acá solo viaja texto.
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
-const POLLINATIONS_TEXT_URL = 'https://text.pollinations.ai/openai'
-const POLLINATIONS_MODELS_URL = 'https://text.pollinations.ai/models'
+// API nueva (gen.pollinations.ai, docs en github.com/pollinations/pollinations/
+// blob/main/APIDOCS.md) — OpenAI-compatible de verdad, requiere key propia
+// (sk_/pk_ de enter.pollinations.ai). El endpoint legacy (text.pollinations.ai)
+// exige un desafío Turnstile que bloquea las apps web incluso con key.
+const POLLINATIONS_CHAT_URL = 'https://gen.pollinations.ai/v1/chat/completions'
+const POLLINATIONS_MODELS_URL = 'https://gen.pollinations.ai/v1/models'
 export const OLLAMA_DEFAULT_URL = 'http://localhost:11434'
 
 export const GEMINI_MODELS = [
@@ -63,27 +67,36 @@ const stripThink = (t) => t.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
 
 // ── Pollinations (text.pollinations.ai, formato OpenAI) ──
 // Sin key: tier anónimo (hoy 1 modelo de texto, sin visión, cola de 1 por
-// IP). Con key gratuita de enter.pollinations.ai: catálogo completo, incl.
-// modelos con visión. El razonamiento viene en un campo aparte del content.
-// Catálogo conocido como fallback: /models exige token Turnstile (anti-bot
-// de Cloudflare) y suele fallar desde el navegador. El endpoint de chat sí
-// tiene CORS abierto, así que los modelos se pueden usar igual.
+// Modelos recomendados (con visión) para preferir en el selector; el resto
+// del catálogo (126+ modelos) se agrega debajo, en el orden que devuelve la API.
+const POLLINATIONS_PREFERRED = ['openai', 'openai-large', 'gemini', 'grok', 'mistral-large', 'qwen-vision']
+
 export const POLLINATIONS_FALLBACK_MODELS = [
-  { id: 'openai-fast', label: 'openai-fast — GPT-OSS 20B (texto, tier gratuito)', vision: false },
+  { id: 'openai', label: 'openai · visión — GPT (recomendado)', vision: true },
 ]
 
 export async function listPollinationsModels(token) {
+  if (!token) return POLLINATIONS_FALLBACK_MODELS
   try {
     const res = await fetch(POLLINATIONS_MODELS_URL, {
-      headers: token ? { authorization: `Bearer ${token}` } : {},
+      headers: { authorization: `Bearer ${token}` },
     })
     if (!res.ok) throw new Error(`Pollinations ${res.status}`)
     const data = await res.json()
-    const models = (Array.isArray(data) ? data : []).map((m) => ({
-      id: m.name,
-      label: `${m.name}${m.vision ? ' · visión' : ''} — ${(m.description || '').slice(0, 48)}`,
-      vision: !!m.vision,
+    const list = Array.isArray(data) ? data : (data.data || [])
+    const models = list.map((m) => ({
+      id: m.id || m.name,
+      label: `${m.id || m.name}${(m.input_modalities || []).includes('image') ? ' · visión' : ''}`,
+      vision: (m.input_modalities || []).includes('image'),
     }))
+    models.sort((a, b) => {
+      const ia = POLLINATIONS_PREFERRED.indexOf(a.id)
+      const ib = POLLINATIONS_PREFERRED.indexOf(b.id)
+      if (ia === -1 && ib === -1) return 0
+      if (ia === -1) return 1
+      if (ib === -1) return -1
+      return ia - ib
+    })
     return models.length ? models : POLLINATIONS_FALLBACK_MODELS
   } catch {
     return POLLINATIONS_FALLBACK_MODELS
@@ -91,6 +104,7 @@ export async function listPollinationsModels(token) {
 }
 
 export async function callPollinations({ token, model, system, user, maxTokens = 2000, image, images }) {
+  if (!token) throw new Error('NO_POLLINATIONS_KEY')
   const imgs = images || (image ? [image] : null)
   const content = imgs
     ? [
@@ -102,41 +116,52 @@ export async function callPollinations({ token, model, system, user, maxTokens =
       ]
     : user
   return withAbort(180_000, async (signal) => {
-    const res = await fetch(POLLINATIONS_TEXT_URL, {
-      method: 'POST',
-      signal,
-      headers: {
-        'content-type': 'application/json',
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        model: model || 'openai-fast',
-        max_tokens: maxTokens + 1024,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content },
-        ],
-      }),
-    })
-    if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      if (/turnstile/i.test(body)) {
-        // El tier anónimo exige el anti-bot de Cloudflare, no disponible
-        // para apps de terceros: desde el navegador hace falta key.
-        throw new Error('Pollinations requiere una key para usarse desde apps web — creá una gratis en enter.pollinations.ai y pegala en Ajustes')
+    const doCall = async (tokenBudget) => {
+      const res = await fetch(POLLINATIONS_CHAT_URL, {
+        method: 'POST',
+        signal,
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          model: model || 'openai',
+          max_tokens: tokenBudget,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content },
+          ],
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        if (/turnstile/i.test(body)) {
+          throw new Error('Pollinations rechazó la key — revisá que sea válida en enter.pollinations.ai')
+        }
+        if (res.status === 401 || res.status === 403) {
+          throw new Error('Key de Pollinations inválida o sin permiso para este modelo — revisá Ajustes')
+        }
+        if (res.status === 429) {
+          throw new Error('Límite de Pollinations alcanzado — esperá un momento y reintentá')
+        }
+        if (/model not found|unknown model/i.test(body)) {
+          throw new Error(`Pollinations no reconoce el modelo "${model}" — revisá el nombre en Ajustes`)
+        }
+        throw new Error(`Pollinations ${res.status}: ${body.slice(0, 300)}`)
       }
-      if (/queue full/i.test(body)) {
-        throw new Error('Cola llena en Pollinations (1 pedido por vez en el tier gratuito) — esperá unos segundos y reintentá')
-      }
-      if (/model not found/i.test(body)) {
-        throw new Error(`Pollinations no reconoce el modelo "${model}" — revisá el nombre en Ajustes`)
-      }
-      throw new Error(`Pollinations ${res.status}: ${body.slice(0, 300)}`)
+      return res.json()
     }
-    const data = await res.json()
-    const msg = data.choices?.[0]?.message || {}
-    const text = stripThink(msg.content || '')
-    if (!text) throw new Error('Pollinations no devolvió texto' + (msg.reasoning ? ' (solo razonamiento)' : ''))
+    let data = await doCall(maxTokens + 1024)
+    // Modelos razonadores (gpt-5-nano y similares) gastan el presupuesto
+    // pensando y devuelven contenido vacío con finish_reason "length"
+    // (verificado: reasoning_tokens > 0, content ""). Reintento con más margen.
+    let choice = data.choices?.[0]
+    if (choice?.finish_reason === 'length' && !choice.message?.content) {
+      data = await doCall(maxTokens + 8192)
+      choice = data.choices?.[0]
+    }
+    const text = stripThink(choice?.message?.content || '')
+    if (!text) throw new Error('Pollinations no devolvió texto (el modelo agotó la respuesta razonando) — probá de nuevo o elegí otro modelo')
     return text
   }, 'No se pudo conectar con Pollinations (red o servicio caído). Reintentá en unos segundos.')
 }

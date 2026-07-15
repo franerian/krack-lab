@@ -13,7 +13,7 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
   const [ollamaState, setOllamaState] = useState('checking')
   // Pollinations: catálogo dinámico (crece con key de enter.pollinations.ai)
   const [pollToken, setPollToken] = useState(settings.pollinationsToken || '')
-  const [pollModel, setPollModel] = useState(settings.pollinationsModel || 'openai-fast')
+  const [pollModel, setPollModel] = useState(settings.pollinationsModel || 'openai')
   const [pollModels, setPollModels] = useState([])
   const [testing, setTesting] = useState(false)
 
@@ -64,7 +64,7 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
     ollamaUrl: ollamaUrl.trim(), ollamaModel,
     geminiKey: geminiKey.trim(), geminiModel,
     pollinationsToken: pollToken.trim(),
-    pollinationsModel: pollModel.trim() || 'openai-fast',
+    pollinationsModel: pollModel.trim() || 'openai',
     // vision del catálogo si el modelo está listado; undefined (desconocido)
     // si lo tipeó a mano — en ese caso no se bloquea el uso con imágenes.
     pollinationsVision: pollModels.find((m) => m.id === pollModel.trim())?.vision,
@@ -143,7 +143,7 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
                 <input
                   list="poll-models"
                   value={pollModel}
-                  placeholder="openai-fast"
+                  placeholder="openai"
                   onChange={(e) => setPollModel(e.target.value)}
                 />
                 <datalist id="poll-models">

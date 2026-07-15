@@ -26,7 +26,7 @@ export default function App() {
   const [settings, setSettings] = usePersistedState('settings', {
     provider: 'gemini', geminiKey: '', geminiModel: 'gemini-2.5-flash',
     ollamaUrl: OLLAMA_DEFAULT_URL, ollamaModel: '',
-    pollinationsToken: '', pollinationsModel: 'openai-fast', pollinationsVision: false,
+    pollinationsToken: '', pollinationsModel: 'openai', pollinationsVision: false,
   })
 
   // Migración: el proveedor Claude (API) fue reemplazado por Pollinations.
