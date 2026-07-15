@@ -5,8 +5,9 @@
 import { callLLM } from './llm.js'
 
 export {
-  MODELS, GEMINI_MODELS, OLLAMA_DEFAULT_URL, DEMO_GEMINI_KEY,
-  callClaude, callOllama, callGemini, callLLM, listOllamaModels,
+  GEMINI_MODELS, OLLAMA_DEFAULT_URL, DEMO_GEMINI_KEY,
+  callOllama, callGemini, callPollinations, callLLM,
+  listOllamaModels, listPollinationsModels,
   isReady, providerHint, cancelActive, hasActive,
 } from './llm.js'
 

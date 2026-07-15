@@ -25,9 +25,16 @@ export default function App() {
   // Demo (Gemini gratuito) como default: la app funciona sin configurar nada.
   const [settings, setSettings] = usePersistedState('settings', {
     provider: 'gemini', geminiKey: '', geminiModel: 'gemini-2.5-flash',
-    apiKey: '', model: 'claude-sonnet-5',
     ollamaUrl: OLLAMA_DEFAULT_URL, ollamaModel: '',
+    pollinationsToken: '', pollinationsModel: 'openai-fast', pollinationsVision: false,
   })
+
+  // Migración: el proveedor Claude (API) fue reemplazado por Pollinations.
+  React.useEffect(() => {
+    if (settings.provider === 'anthropic') {
+      setSettings((s) => ({ ...s, provider: 'pollinations' }))
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const [view, setView] = useState('editor')
   const [busy, setBusy] = useState(null)
   const [instruction, setInstruction] = useState('')

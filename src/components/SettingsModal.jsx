@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { Settings, X, Sparkles, Copy, RefreshCw } from 'lucide-react'
-import { MODELS, GEMINI_MODELS, callLLM, listOllamaModels, OLLAMA_DEFAULT_URL } from '../lib/anthropic.js'
+import { GEMINI_MODELS, callLLM, listOllamaModels, listPollinationsModels, OLLAMA_DEFAULT_URL } from '../lib/anthropic.js'
 
 export default function SettingsModal({ settings, setSettings, onClose, toast }) {
   const [provider, setProvider] = useState(settings.provider || 'gemini')
-  const [apiKey, setApiKey] = useState(settings.apiKey || '')
-  const [model, setModel] = useState(settings.model || MODELS[0].id)
   const [geminiKey, setGeminiKey] = useState(settings.geminiKey || '')
   const [geminiModel, setGeminiModel] = useState(settings.geminiModel || GEMINI_MODELS[0].id)
   const [ollamaUrl, setOllamaUrl] = useState(settings.ollamaUrl || OLLAMA_DEFAULT_URL)
@@ -13,6 +11,10 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
   const [ollamaModels, setOllamaModels] = useState([])
   // 'checking' | 'ok' | 'cors' (corre pero bloquea este origen) | 'down'
   const [ollamaState, setOllamaState] = useState('checking')
+  // Pollinations: catálogo dinámico (crece con key de enter.pollinations.ai)
+  const [pollToken, setPollToken] = useState(settings.pollinationsToken || '')
+  const [pollModel, setPollModel] = useState(settings.pollinationsModel || 'openai-fast')
+  const [pollModels, setPollModels] = useState([])
   const [testing, setTesting] = useState(false)
 
   // Diagnóstico de conexión: distingue "no corre" de "corre pero CORS bloquea".
@@ -40,12 +42,32 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
     diagnose(ollamaUrl)
   }, [provider, ollamaUrl]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Catálogo de Pollinations al abrir la pestaña o cambiar el token
+  // (debounce corto para no consultar en cada tecla). Si el catálogo no se
+  // puede consultar (Turnstile), queda el fallback y el modelo se tipea.
+  useEffect(() => {
+    if (provider !== 'pollinations') return
+    let cancelled = false
+    const t = setTimeout(() => {
+      listPollinationsModels(pollToken.trim()).then((models) => {
+        if (cancelled) return
+        setPollModels(models)
+      })
+    }, 500)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [provider, pollToken]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const originCmd = `launchctl setenv OLLAMA_ORIGINS "${window.location.origin}" && killall Ollama && open -a Ollama`
 
   const current = {
-    provider, apiKey: apiKey.trim(), model,
+    provider,
     ollamaUrl: ollamaUrl.trim(), ollamaModel,
     geminiKey: geminiKey.trim(), geminiModel,
+    pollinationsToken: pollToken.trim(),
+    pollinationsModel: pollModel.trim() || 'openai-fast',
+    // vision del catálogo si el modelo está listado; undefined (desconocido)
+    // si lo tipeó a mano — en ese caso no se bloquea el uso con imágenes.
+    pollinationsVision: pollModels.find((m) => m.id === pollModel.trim())?.vision,
   }
 
   const test = async () => {
@@ -80,9 +102,9 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
                 onClick={() => setProvider('ollama')}
               >Ollama (local)</button>
               <button
-                className={'tab' + (provider === 'anthropic' ? ' active' : '')}
-                onClick={() => setProvider('anthropic')}
-              >Claude (API)</button>
+                className={'tab' + (provider === 'pollinations' ? ' active' : '')}
+                onClick={() => setProvider('pollinations')}
+              >Pollinations</button>
             </div>
           </div>
 
@@ -114,29 +136,35 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
             </>
           )}
 
-          {provider === 'anthropic' && (
+          {provider === 'pollinations' && (
             <>
               <div className="field">
-                <label>Anthropic API Key</label>
+                <label>Modelo (elegí o escribí el nombre)</label>
                 <input
-                  type="password"
-                  value={apiKey}
-                  placeholder="sk-ant-…"
-                  onChange={(e) => setApiKey(e.target.value)}
+                  list="poll-models"
+                  value={pollModel}
+                  placeholder="openai-fast"
+                  onChange={(e) => setPollModel(e.target.value)}
                 />
+                <datalist id="poll-models">
+                  {pollModels.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </datalist>
               </div>
               <div className="field">
-                <label>Modelo</label>
-                <select value={model} onChange={(e) => setModel(e.target.value)}>
-                  {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                </select>
+                <label>Key de Pollinations (requerida)</label>
+                <input
+                  type="password"
+                  value={pollToken}
+                  placeholder="Creá una gratis en enter.pollinations.ai"
+                  onChange={(e) => setPollToken(e.target.value)}
+                />
               </div>
               <p className="hint">
-                La clave se guarda solo en el <code>localStorage</code> de tu navegador y se envía
-                únicamente a <code>api.anthropic.com</code>. Requiere crédito en{' '}
-                <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
-                  console.anthropic.com
-                </a>.
+                Requiere una <b>key gratuita</b> de{' '}
+                <a href="https://enter.pollinations.ai" target="_blank" rel="noreferrer">enter.pollinations.ai</a>{' '}
+                (su tier anónimo usa un anti-bot que bloquea las apps web). Con la key accedés a
+                su catálogo multi-modelo — incluidos modelos con <b>visión</b>, necesarios para el
+                Style DNA Lab; escribí el nombre del modelo arriba. La key se guarda solo en tu navegador.
               </p>
             </>
           )}
@@ -196,7 +224,7 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
                 <p className="hint" style={{ color: '#fca5a5' }}>
                   No se detecta Ollama en <code>{ollamaUrl || OLLAMA_DEFAULT_URL}</code>.
                   Abrí la app Ollama (o corré <code>ollama serve</code>) en esta máquina y tocá Reintentar.
-                  Si no tenés Ollama, usá el modo Demo (Gemini) o Claude (API).
+                  Si no tenés Ollama, usá el modo Demo (Gemini) o Pollinations.
                 </p>
               )}
               {ollamaState !== 'ok' && ollamaState !== 'checking' && (
@@ -211,7 +239,7 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
           <button
             className="btn"
             onClick={test}
-            disabled={testing || (provider === 'anthropic' ? !apiKey : provider === 'ollama' ? !ollamaModel : false)}
+            disabled={testing || (provider === 'ollama' ? !ollamaModel : provider === 'pollinations' ? !pollToken.trim() : false)}
           >
             {testing ? <span className="spinner" /> : ''}Probar conexión
           </button>

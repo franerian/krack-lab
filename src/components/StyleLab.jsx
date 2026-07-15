@@ -13,7 +13,10 @@ import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
 import { addRun, getRuns } from '../lib/dnaLog.js'
 
 const nowIso = () => new Date().toISOString().replace('T', ' ').slice(0, 19)
-const modelLabel = (s) => (s.provider === 'ollama' ? s.ollamaModel : s.model)
+const modelLabel = (s) =>
+  s.provider === 'ollama' ? s.ollamaModel
+  : s.provider === 'pollinations' ? (s.pollinationsModel || 'openai-fast')
+  : (s.geminiModel || 'gemini')
 
 const MAX_REFS = 5
 

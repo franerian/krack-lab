@@ -1,16 +1,11 @@
-// Transporte LLM: clientes Anthropic/Ollama para el navegador, despacho por
-// proveedor, timeouts y cancelación. El prompt-engineering vive en
-// anthropic.js (acciones) — acá solo viaja texto.
+// Transporte LLM: clientes Gemini/Pollinations/Ollama para el navegador,
+// despacho por proveedor, timeouts y cancelación. El prompt-engineering vive
+// en anthropic.js (acciones) — acá solo viaja texto.
 
-const API_URL = 'https://api.anthropic.com/v1/messages'
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
+const POLLINATIONS_TEXT_URL = 'https://text.pollinations.ai/openai'
+const POLLINATIONS_MODELS_URL = 'https://text.pollinations.ai/models'
 export const OLLAMA_DEFAULT_URL = 'http://localhost:11434'
-
-export const MODELS = [
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (recomendado)' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (rápido y barato)' },
-  { id: 'claude-opus-4-8', label: 'Claude Opus 4.8 (máxima calidad)' },
-]
 
 export const GEMINI_MODELS = [
   { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (visión, recomendado)' },
@@ -66,42 +61,84 @@ export async function withAbort(timeoutMs, run, netHint) {
 // presupuesto y no hay respuesta, error claro en vez de PARSE_ERROR.
 const stripThink = (t) => t.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
 
-export async function callClaude({ apiKey, model, system, user, maxTokens = 2000, image, images }) {
-  if (!apiKey) throw new Error('NO_API_KEY')
+// ── Pollinations (text.pollinations.ai, formato OpenAI) ──
+// Sin key: tier anónimo (hoy 1 modelo de texto, sin visión, cola de 1 por
+// IP). Con key gratuita de enter.pollinations.ai: catálogo completo, incl.
+// modelos con visión. El razonamiento viene en un campo aparte del content.
+// Catálogo conocido como fallback: /models exige token Turnstile (anti-bot
+// de Cloudflare) y suele fallar desde el navegador. El endpoint de chat sí
+// tiene CORS abierto, así que los modelos se pueden usar igual.
+export const POLLINATIONS_FALLBACK_MODELS = [
+  { id: 'openai-fast', label: 'openai-fast — GPT-OSS 20B (texto, tier gratuito)', vision: false },
+]
+
+export async function listPollinationsModels(token) {
+  try {
+    const res = await fetch(POLLINATIONS_MODELS_URL, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) throw new Error(`Pollinations ${res.status}`)
+    const data = await res.json()
+    const models = (Array.isArray(data) ? data : []).map((m) => ({
+      id: m.name,
+      label: `${m.name}${m.vision ? ' · visión' : ''} — ${(m.description || '').slice(0, 48)}`,
+      vision: !!m.vision,
+    }))
+    return models.length ? models : POLLINATIONS_FALLBACK_MODELS
+  } catch {
+    return POLLINATIONS_FALLBACK_MODELS
+  }
+}
+
+export async function callPollinations({ token, model, system, user, maxTokens = 2000, image, images }) {
   const imgs = images || (image ? [image] : null)
   const content = imgs
     ? [
-        ...imgs.map((im) => ({
-          type: 'image',
-          source: { type: 'base64', media_type: im.mediaType, data: im.base64 },
-        })),
         { type: 'text', text: user },
+        ...imgs.map((im) => ({
+          type: 'image_url',
+          image_url: { url: `data:${im.mediaType};base64,${im.base64}` },
+        })),
       ]
     : user
   return withAbort(180_000, async (signal) => {
-    const res = await fetch(API_URL, {
+    const res = await fetch(POLLINATIONS_TEXT_URL, {
       method: 'POST',
       signal,
       headers: {
         'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({
-        model: model || 'claude-sonnet-5',
-        max_tokens: maxTokens,
-        system,
-        messages: [{ role: 'user', content }],
+        model: model || 'openai-fast',
+        max_tokens: maxTokens + 1024,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content },
+        ],
       }),
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '')
-      throw new Error(`API ${res.status}: ${body.slice(0, 300)}`)
+      if (/turnstile/i.test(body)) {
+        // El tier anónimo exige el anti-bot de Cloudflare, no disponible
+        // para apps de terceros: desde el navegador hace falta key.
+        throw new Error('Pollinations requiere una key para usarse desde apps web — creá una gratis en enter.pollinations.ai y pegala en Ajustes')
+      }
+      if (/queue full/i.test(body)) {
+        throw new Error('Cola llena en Pollinations (1 pedido por vez en el tier gratuito) — esperá unos segundos y reintentá')
+      }
+      if (/model not found/i.test(body)) {
+        throw new Error(`Pollinations no reconoce el modelo "${model}" — revisá el nombre en Ajustes`)
+      }
+      throw new Error(`Pollinations ${res.status}: ${body.slice(0, 300)}`)
     }
     const data = await res.json()
-    return data.content?.map((b) => b.text || '').join('') || ''
-  }, 'No se pudo conectar con la API de Anthropic (red o CORS). Revisá tu conexión.')
+    const msg = data.choices?.[0]?.message || {}
+    const text = stripThink(msg.content || '')
+    if (!text) throw new Error('Pollinations no devolvió texto' + (msg.reasoning ? ' (solo razonamiento)' : ''))
+    return text
+  }, 'No se pudo conectar con Pollinations (red o servicio caído). Reintentá en unos segundos.')
 }
 
 export async function callOllama({ url, model, system, user, maxTokens = 2000, image, images }) {
@@ -226,9 +263,14 @@ export function callLLM(settings, { system, user, maxTokens, image, images }) {
       url: settings.ollamaUrl, model: settings.ollamaModel, system, user, maxTokens, image, images,
     })
   }
-  if (settings.provider === 'anthropic') {
-    return callClaude({
-      apiKey: settings.apiKey, model: settings.model, system, user, maxTokens, image, images,
+  if (settings.provider === 'pollinations') {
+    // Guard de visión: el modelo elegido no ve imágenes → error claro antes
+    // de gastar el request (el DNA Lab manda imágenes siempre).
+    if ((image || images?.length) && settings.pollinationsVision === false) {
+      return Promise.reject(new Error('El modelo de Pollinations elegido no tiene visión — elegí uno con "visión" en Ajustes (requiere key de enter.pollinations.ai) o usá el modo Demo (Gemini)'))
+    }
+    return callPollinations({
+      token: settings.pollinationsToken, model: settings.pollinationsModel, system, user, maxTokens, image, images,
     })
   }
   // Default: Gemini (modo demo con key gratuita embebida, o la del usuario).
@@ -240,12 +282,12 @@ export function callLLM(settings, { system, user, maxTokens, image, images }) {
 // ¿Está el proveedor listo para usarse?
 export function isReady(settings) {
   if (settings.provider === 'ollama') return !!settings.ollamaModel
-  if (settings.provider === 'anthropic') return !!settings.apiKey
+  if (settings.provider === 'pollinations') return !!settings.pollinationsToken
   return true // gemini: la key demo siempre está disponible
 }
 
 export function providerHint(settings) {
   if (settings.provider === 'ollama') return 'Elegí un modelo de Ollama en Ajustes'
-  if (settings.provider === 'anthropic') return 'Configurá tu API key de Anthropic en Ajustes'
-  return 'El modo demo (Gemini) debería funcionar — revisá Ajustes'
+  if (settings.provider === 'pollinations') return 'Pegá tu key gratuita de enter.pollinations.ai en Ajustes'
+  return 'El proveedor debería funcionar — revisá Ajustes'
 }
