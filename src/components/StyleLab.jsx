@@ -28,8 +28,13 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   const [mode, setMode] = useState('style')
   const [busy, setBusy] = useState(false)
   const [pass, setPass] = useState(0) // 0 idle | 'florence' | 1 extracción | 2 autocrítica
+  // Ambos ON por default: un solo botón "Extraer ADN" corre todo el pipeline.
+  // Autocrítica siempre suma calidad con costo mínimo; Florence-2 descarga
+  // 230 MB la primera vez (cacheado después). Los toggles quedan como
+  // "opciones avanzadas" para desactivar si querés más velocidad.
   const [verify, setVerify] = useState(true)
-  const [deep, setDeep] = useState(false)
+  const [deep, setDeep] = useState(true)
+  const [advanced, setAdvanced] = useState(false)
   const [deepStatus, setDeepStatus] = useState('')
   const [grounding, setGrounding] = useState(null)
   const [result, setResult] = useState(null)
@@ -401,14 +406,6 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                 )}
               </div>
             )}
-            <label className="verify-toggle">
-              <input type="checkbox" checked={verify} onChange={(e) => setVerify(e.target.checked)} />
-              Autocrítica (2ª pasada anti-exageración)
-            </label>
-            <label className="verify-toggle" title="Corre Florence-2 en tu navegador para un inventario objetivo por regiones + OCR. Descarga ~230 MB la primera vez (queda cacheado).">
-              <input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} />
-              Análisis profundo (Florence-2 local, ~230 MB la 1ª vez)
-            </label>
             <button className="btn primary" style={{ width: '100%' }} onClick={analyze} disabled={busy || !images.length}>
               {busy ? <span className="spinner" /> : <Dna className="ico" />}
               {busy
@@ -417,6 +414,31 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                     : pass === 2 ? 'Verificando fidelidad… (2/2)' : `Extrayendo ADN… (1/${verify ? 2 : 1})`)
                 : 'Extraer ADN visual'}
             </button>
+            <button
+              type="button"
+              className="advanced-toggle"
+              onClick={() => setAdvanced((v) => !v)}
+              title="Ajustes finos del pipeline: autocrítica y análisis profundo con Florence-2"
+            >
+              {advanced ? '▾' : '▸'} Opciones avanzadas
+              {(!verify || !deep) && <span className="advanced-hint"> · algunas desactivadas</span>}
+            </button>
+            {advanced && (
+              <div className="advanced-panel">
+                <label className="verify-toggle">
+                  <input type="checkbox" checked={verify} onChange={(e) => setVerify(e.target.checked)} />
+                  <span>
+                    Autocrítica <span className="opt-desc">— 2ª pasada anti-exageración (recomendado)</span>
+                  </span>
+                </label>
+                <label className="verify-toggle" title="Corre Florence-2 en tu navegador para inventario objetivo por regiones + OCR. Descarga ~230 MB la primera vez, queda cacheado.">
+                  <input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} />
+                  <span>
+                    Análisis profundo <span className="opt-desc">— Florence-2 local (~230 MB la 1ª vez, cacheado después)</span>
+                  </span>
+                </label>
+              </div>
+            )}
             {busy && (
               <button className="btn ghost" style={{ width: '100%' }} onClick={() => cancelActive()}>
                 <X className="ico" />Cancelar
