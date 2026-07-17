@@ -471,6 +471,10 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
               </div>
             )}
             {(() => {
+              // Con Fireworks el DNA Lab ahora usa Structured Outputs → Kimi
+              // responde en JSON limpio sin fallback. Para otros proveedores
+              // sigue el override preventivo.
+              if (settings.provider === 'fireworks') return null
               const { override } = pickDirectModel(settings, { needsVision: true })
               return override ? <div className="model-override" title="Fallback automático para tareas del DNA Lab">↳ {override}</div> : null
             })()}

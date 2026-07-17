@@ -221,7 +221,7 @@ export async function callPollinations({ token, model, system, user, maxTokens =
 // en `message.reasoning_content` separado del `content` — se descarta y solo
 // se lee el content final. Si finish_reason es "length" y content está vacío,
 // se reintenta con más margen (mismo patrón que Pollinations/Gemini/Ollama).
-export async function callFireworks({ token, model, system, user, maxTokens = 2000, image, images }) {
+export async function callFireworks({ token, model, system, user, maxTokens = 2000, image, images, responseSchema }) {
   if (!token) throw new Error('NO_FIREWORKS_KEY')
   const imgs = images || (image ? [image] : null)
   const content = imgs
@@ -251,6 +251,15 @@ export async function callFireworks({ token, model, system, user, maxTokens = 20
             { role: 'system', content: system },
             { role: 'user', content },
           ],
+          // Structured Outputs: fuerza al modelo a devolver JSON válido con
+          // este schema. Elimina que Kimi/DeepSeek razonen en voz alta en el
+          // content — el reasoning sigue en reasoning_content aparte.
+          ...(responseSchema ? {
+            response_format: {
+              type: 'json_schema',
+              json_schema: { name: 'krack_sections', schema: responseSchema },
+            },
+          } : {}),
         }),
       })
       if (!res.ok) {
@@ -400,7 +409,7 @@ export async function listOllamaModels(url) {
 }
 
 // Despachador según el proveedor elegido en Ajustes.
-export function callLLM(settings, { system, user, maxTokens, image, images }) {
+export function callLLM(settings, { system, user, maxTokens, image, images, responseSchema }) {
   if (settings.provider === 'ollama') {
     return callOllama({
       url: settings.ollamaUrl, model: settings.ollamaModel, system, user, maxTokens, image, images,
@@ -424,7 +433,7 @@ export function callLLM(settings, { system, user, maxTokens, image, images }) {
       return Promise.reject(new Error('Este modelo de Fireworks no tiene visión funcional — elegí Kimi K2.7 Code u otro con visión en Ajustes'))
     }
     return callFireworks({
-      token: settings.fireworksToken, model: settings.fireworksModel, system, user, maxTokens, image, images,
+      token: settings.fireworksToken, model: settings.fireworksModel, system, user, maxTokens, image, images, responseSchema,
     })
   }
   // Default: Gemini (modo demo con key gratuita embebida, o la del usuario).

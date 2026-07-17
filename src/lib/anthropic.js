@@ -45,9 +45,43 @@ const FORMAT_REMINDER = `
 
 FORMAT REMINDER: your previous reply could not be parsed. Respond ONLY with the structured sections — lines starting with "# SectionName" followed by the section text. No preamble, no fences, no commentary.`
 
+// Structured Outputs: schema JSON de las secciones del prompt. En modo
+// "style" no se piden Subject/Action/Environment; en "replica" van todas.
+// Fireworks respeta json_schema y elimina el bug de razonadores hablando
+// en voz alta dentro del content (verificado con Kimi K2.7 Code: pasa de
+// 3000+ tokens de razonamiento inline a 250 tokens de JSON limpio).
+const ALL_SECTION_KEYS = ['Subject', 'Style', 'Composition', 'Camera', 'Lighting', 'Color', 'Mood', 'Action', 'Environment', 'Negative']
+const STYLE_BANNED = new Set(['Subject', 'Action', 'Environment'])
+
+export function sectionsSchema(mode = 'style') {
+  const keys = ALL_SECTION_KEYS.filter((k) => mode === 'replica' || !STYLE_BANNED.has(k))
+  const properties = {}
+  for (const k of keys) properties[k] = { type: 'string' }
+  return { type: 'object', properties, required: keys, additionalProperties: false }
+}
+
+const jsonToSections = (obj) => {
+  if (!obj || typeof obj !== 'object') return []
+  return ALL_SECTION_KEYS
+    .filter((k) => typeof obj[k] === 'string' && obj[k].trim())
+    .map((k) => ({ name: k, text: obj[k].trim() }))
+}
+
+// Proveedores donde tiene sentido usar Structured Outputs de forma nativa
+// (mismo formato OpenAI, response_format json_schema soportado).
+const supportsStructured = (settings) => settings.provider === 'fireworks'
+
 async function callParsed(settings, req) {
-  let raw = await callLLM(settings, req)
-  let parsed = textToSections(raw)
+  const useSchema = req.schema && supportsStructured(settings)
+  let raw = await callLLM(settings, useSchema ? { ...req, responseSchema: req.schema } : req)
+  let parsed = []
+  if (useSchema) {
+    try {
+      const obj = JSON.parse(raw)
+      parsed = jsonToSections(obj)
+    } catch { /* cae al parseo por texto abajo */ }
+  }
+  if (!parsed.length) parsed = textToSections(raw)
   let retried = false
   if (!parsed.length) {
     retried = true
@@ -228,10 +262,13 @@ ${mode === 'replica' ? '# Subject\n(scene content, filtered through the DNA)\n\n
 avoid: (elements that would break this DNA)`
 
 export async function analyzeImageStyle({ settings: rawSettings, image, images, mode = 'style', measurements = '', hint = '' }) {
-  // Los razonadores pesados (Kimi K2.7 Code) piensan en voz alta dentro del
-  // content y jamás emiten las secciones — fallback a un modelo con visión
-  // que devuelve output limpio (razonamiento en reasoning_content aparte).
-  const { settings } = pickDirectModel(rawSettings, { needsVision: true })
+  // Con Structured Outputs, Kimi K2.7 respeta el schema y devuelve JSON
+  // limpio (razonamiento va a reasoning_content aparte) → NO hace falta
+  // el fallback a Qwen3.7 Plus. Fireworks es el único con Structured
+  // Outputs nativos; para el resto seguimos con el fallback preventivo.
+  const settings = rawSettings.provider === 'fireworks'
+    ? rawSettings
+    : pickDirectModel(rawSettings, { needsVision: true }).settings
   const imgs = images && images.length ? images : (image ? [image] : [])
   const multi = imgs.length > 1
   const base = multi
@@ -242,7 +279,7 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
   const system = DNA_SYSTEM(mode)
   const withHint = hint.trim() ? `${base}\n\nUSER GUIDANCE (apply while extracting): ${hint.trim()}` : base
   const user = measurements ? `${withHint}\n\n${measurements}` : withHint
-  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: imgs })
+  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: imgs, schema: sectionsSchema(mode) })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
   const sections = parsed.filter((s) => !banned.includes(s.name))
   const trace = { pass: 'extract', system, user, raw, retried }
@@ -256,7 +293,9 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
 // el prompt para que la próxima iteración converja. El original es siempre
 // el objetivo; nunca se persiguen los artefactos de la generación.
 export async function refineFromComparison({ settings: rawSettings, original, generated, draft, mode = 'style', comparisonData = '' }) {
-  const { settings } = pickDirectModel(rawSettings, { needsVision: true })
+  const settings = rawSettings.provider === 'fireworks'
+    ? rawSettings
+    : pickDirectModel(rawSettings, { needsVision: true }).settings
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
   const system = DNA_SYSTEM(mode) + `
 
@@ -268,7 +307,7 @@ PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference �
   // Usa la versión chica del base64 (512max, 0.75) para ahorrar tokens; si
   // el caller no la calculó (ej. imagen del historial), cae al base64 normal.
   const asLlm = (im) => ({ base64: im.llmBase64 || im.base64, mediaType: im.mediaType })
-  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: [asLlm(original), asLlm(generated)] })
+  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: [asLlm(original), asLlm(generated)], schema: sectionsSchema(mode) })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
   const sections = mergeOverDraft(draft, parsed.filter((s) => !banned.includes(s.name)))
   const trace = { pass: 'refine', system, user, raw, retried }
@@ -277,7 +316,9 @@ PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference �
 }
 
 export async function critiqueStyleDNA({ settings: rawSettings, image, images, draft, mode = 'style', measurements = '' }) {
-  const { settings } = pickDirectModel(rawSettings, { needsVision: true })
+  const settings = rawSettings.provider === 'fireworks'
+    ? rawSettings
+    : pickDirectModel(rawSettings, { needsVision: true }).settings
   const imgs = images && images.length ? images : (image ? [image] : [])
   const multi = imgs.length > 1
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
@@ -295,7 +336,7 @@ VERIFICATION MODE: you receive a DRAFT prompt produced from ${multi ? `these ${i
 9. EXAGGERATIONS & CONTRADICTIONS — any wording stronger than what the image shows, or violating the measurements or the DNA itself.
 Output the CORRECTED full prompt in the exact same section format — nothing else. Keep what the draft got right.`
   const user = `DRAFT TO VERIFY:\n${draftText}${measurements ? `\n\n${measurements}` : ''}`
-  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: imgs })
+  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: imgs, schema: sectionsSchema(mode) })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
   const sections = mergeOverDraft(draft, parsed.filter((s) => !banned.includes(s.name)))
   const trace = { pass: 'critique', system, user, raw, retried }
