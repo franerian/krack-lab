@@ -26,21 +26,30 @@ export const GEMINI_MODELS = [
 //   - MiniMax M3 (minimax-m3) tiene visión declarada pero identifica MAL
 //     los colores en pruebas básicas — recomendado SOLO para texto.
 // Modelos de Fireworks que razonan TANTO en el content (no en reasoning_content
-// separado) que rompen tareas de output puro tipo Pulir: gastan miles de tokens
-// planificando y contando palabras antes (o en lugar) de emitir el prompt final.
+// separado) que rompen tareas de output puro: gastan miles de tokens
+// planificando y contando palabras antes (o en lugar) de emitir el resultado.
 // Verificado con Kimi K2.7 Code: 1720 palabras de razonamiento inline, cortado.
 export const FIREWORKS_HEAVY_REASONERS = ['kimi-k2p7-code', 'kimi-k2p6', 'deepseek-v4-pro']
 
-// Selecciona un modelo "directo" (no razonador) para tareas que necesitan
-// output puro. Solo transforma settings cuando el modelo actual es un
-// razonador conocido y hay una alternativa buena en el mismo proveedor.
-// Devuelve { settings, override } — override indica si hubo cambio (para
-// mostrarlo en el toast al usuario).
-export function pickDirectModel(settings) {
+// Selecciona un modelo "directo" (razona en reasoning_content separado, no
+// en el content) para tareas que necesitan output puro. Solo transforma
+// settings cuando el actual es un razonador pesado conocido y existe una
+// alternativa buena en el mismo proveedor.
+// `needsVision` decide el fallback: sin visión → MiniMax M3 (barato, texto);
+// con visión → Qwen3.7 Plus (visión funcional, razonamiento aparte).
+// Devuelve { settings, override }; override sirve para mostrar el cambio al usuario.
+export function pickDirectModel(settings, { needsVision = false } = {}) {
   if (settings.provider === 'fireworks' && FIREWORKS_HEAVY_REASONERS.includes(settings.fireworksModel)) {
+    if (needsVision) {
+      // Qwen3.7 Plus: visión OK, razonamiento en reasoning_content separado.
+      return {
+        settings: { ...settings, fireworksModel: 'qwen3p7-plus', fireworksVision: true },
+        override: `${settings.fireworksModel} razona en voz alta — se usa Qwen3.7 Plus (visión OK, sin ruido)`,
+      }
+    }
     return {
       settings: { ...settings, fireworksModel: 'minimax-m3', fireworksVision: false },
-      override: `${settings.fireworksModel} razona demasiado para pulir — se usa MiniMax M3`,
+      override: `${settings.fireworksModel} razona demasiado — se usa MiniMax M3`,
     }
   }
   return { settings, override: null }

@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { Dna, Bug, X, Camera, Crosshair, Search, Printer, Copy, Bookmark, ImagePlus, Plus } from 'lucide-react'
 import { generateImage } from '../lib/imageGen.js'
-import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, isReady, providerHint, cancelActive } from '../lib/anthropic.js'
+import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, isReady, providerHint, cancelActive, pickDirectModel } from '../lib/anthropic.js'
 import LogViewer from './LogViewer.jsx'
 import ImageResult from './ImageResult.jsx'
 import { clipSimilarity } from '../lib/clip.js'
@@ -467,6 +467,10 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                 {grounding.ocr ? ' · texto detectado' : ''} — «{grounding.caption.slice(0, 90)}…»
               </div>
             )}
+            {(() => {
+              const { override } = pickDirectModel(settings, { needsVision: true })
+              return override ? <div className="model-override" title="Fallback automático para tareas del DNA Lab">↳ {override}</div> : null
+            })()}
             {result && (
               <div className="loop-panel">
                 <div className="metrics-title"><Printer className="ico" />Loop de fidelidad · prompt v{version}</div>

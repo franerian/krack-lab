@@ -317,6 +317,15 @@ body {
   background: var(--accent-tint);
 }
 
+/* Aviso discreto en el DNA Lab cuando se aplica un fallback automático
+   de modelo (razonador puro → modelo directo). */
+.model-override {
+  font: 500 11px var(--font-ui); color: var(--accent);
+  padding: 6px 10px; border-radius: var(--radius);
+  background: var(--accent-tint); border: 1px solid var(--accent-glow);
+  line-height: 1.4;
+}
+
 .cat-header {
   font: 700 10.5px var(--font-ui); letter-spacing: 0.14em; color: var(--text-faint);
   padding: 16px 6px 6px; text-transform: uppercase;

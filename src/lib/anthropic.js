@@ -2,7 +2,7 @@
 // coberturas y Style DNA Lab. El transporte (clientes, timeouts,
 // cancelación) vive en llm.js; este archivo re-exporta lo usado por la UI.
 
-import { callLLM } from './llm.js'
+import { callLLM, pickDirectModel } from './llm.js'
 
 export {
   GEMINI_MODELS, FIREWORKS_MODELS, OLLAMA_DEFAULT_URL, DEMO_GEMINI_KEY,
@@ -227,7 +227,11 @@ ${mode === 'replica' ? '# Subject\n(scene content, filtered through the DNA)\n\n
 # Negative
 avoid: (elements that would break this DNA)`
 
-export async function analyzeImageStyle({ settings, image, images, mode = 'style', measurements = '', hint = '' }) {
+export async function analyzeImageStyle({ settings: rawSettings, image, images, mode = 'style', measurements = '', hint = '' }) {
+  // Los razonadores pesados (Kimi K2.7 Code) piensan en voz alta dentro del
+  // content y jamás emiten las secciones — fallback a un modelo con visión
+  // que devuelve output limpio (razonamiento en reasoning_content aparte).
+  const { settings } = pickDirectModel(rawSettings, { needsVision: true })
   const imgs = images && images.length ? images : (image ? [image] : [])
   const multi = imgs.length > 1
   const base = multi
@@ -251,7 +255,8 @@ export async function analyzeImageStyle({ settings, image, images, mode = 'style
 // Loop fotocopiadora: compara la generación contra el original y corrige
 // el prompt para que la próxima iteración converja. El original es siempre
 // el objetivo; nunca se persiguen los artefactos de la generación.
-export async function refineFromComparison({ settings, original, generated, draft, mode = 'style', comparisonData = '' }) {
+export async function refineFromComparison({ settings: rawSettings, original, generated, draft, mode = 'style', comparisonData = '' }) {
+  const { settings } = pickDirectModel(rawSettings, { needsVision: true })
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
   const system = DNA_SYSTEM(mode) + `
 
@@ -268,7 +273,8 @@ PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference �
   return { sections, trace }
 }
 
-export async function critiqueStyleDNA({ settings, image, images, draft, mode = 'style', measurements = '' }) {
+export async function critiqueStyleDNA({ settings: rawSettings, image, images, draft, mode = 'style', measurements = '' }) {
+  const { settings } = pickDirectModel(rawSettings, { needsVision: true })
   const imgs = images && images.length ? images : (image ? [image] : [])
   const multi = imgs.length > 1
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
