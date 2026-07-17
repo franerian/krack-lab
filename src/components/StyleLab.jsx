@@ -13,6 +13,11 @@ import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
 import { addRun, getRuns } from '../lib/dnaLog.js'
 
 const nowIso = () => new Date().toISOString().replace('T', ' ').slice(0, 19)
+// Snapshot corto del prompt (secciones concatenadas, sin encabezados) para
+// mostrarlo en el hover del thumbnail del strip de versiones.
+const sectionsToPromptSnapshot = (secs) =>
+  secs.filter((s) => s.text.trim() && s.name !== 'Negative').map((s) => s.text.trim()).join(' ')
+
 const modelLabel = (s) =>
   s.provider === 'ollama' ? s.ollamaModel
   : s.provider === 'pollinations' ? (s.pollinationsModel || 'openai')
@@ -175,8 +180,20 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     ])
     setGenMetrics(gm)
     setClipScore(score)
-    if (score != null) setHistory((prev) => [...prev, { v: version, score }])
+    // Guarda también dataUrl y snapshot del prompt para el strip de versiones
+    // (permite volver a comparar cualquier iteración sin regenerarla).
+    setHistory((prev) => [
+      ...prev.filter((h) => h.v !== version),
+      { v: version, score, dataUrl: loaded.dataUrl, prompt: result ? sectionsToPromptSnapshot(result) : '' },
+    ].sort((a, b) => a.v - b.v))
     setScoring(false)
+  }
+
+  // Restaura una versión anterior del loop desde el strip: repone su imagen y
+  // score sin re-generar, y deja el prompt actual intacto (para comparar).
+  const restoreHistory = (h) => {
+    setGenImg({ dataUrl: h.dataUrl, base64: h.dataUrl.split(',')[1], mediaType: 'image/jpeg' })
+    setClipScore(h.score)
   }
 
   const loadGenFile = async (file) => {
@@ -496,16 +513,31 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                   </div>
                 )}
                 {history.length > 0 && (
-                  <div className="score-history">
-                    {history.map((h, i) => (
-                      <span key={i} className="metric-badge">v{h.v}: {h.score}</span>
-                    ))}
+                  <>
+                    <div className="version-strip">
+                      {history.map((h) => (
+                        <button
+                          key={h.v}
+                          type="button"
+                          className={'version-thumb' + (h.v === version && genImg?.dataUrl === h.dataUrl ? ' active' : '')}
+                          onClick={() => restoreHistory(h)}
+                          title={`v${h.v} · CLIP ${h.score} — click para comparar`}
+                        >
+                          <img src={h.dataUrl} alt={`v${h.v}`} />
+                          <span className={'version-score ' + (h.score >= 90 ? 'good' : h.score >= 75 ? 'mid' : 'bad')}>
+                            v{h.v} · {h.score}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                     {history.length >= 2 && (
-                      <span className="hint">
-                        {history[history.length - 1].score > history[0].score ? '↑ convergiendo' : ''}
-                      </span>
+                      <div className="hint">
+                        {history[history.length - 1].score > history[0].score
+                          ? `↑ convergiendo (v1 ${history[0].score} → v${history[history.length - 1].v} ${history[history.length - 1].score})`
+                          : ''}
+                      </div>
                     )}
-                  </div>
+                  </>
                 )}
                 {genImg && !scoring && (
                   <button className="btn" style={{ width: '100%' }} onClick={refine} disabled={refining}>

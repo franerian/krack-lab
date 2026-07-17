@@ -62,7 +62,10 @@ export const CHARACTER_LOOKS = [
 export const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4', '2.39:1']
 
 // Compila el formulario de personaje a texto de prompt.
-export function compileCharacter(values, lookId) {
+// `locked` inyecta una regla MANDATORY de consistencia visual — para escenas
+// donde el personaje debe verse igual entre planos (facial features, wardrobe,
+// etnia). Es lo equivalente a un "reference lock" de Runway/Nano Banana.
+export function compileCharacter(values, lookId, locked = false) {
   const look = CHARACTER_LOOKS.find((l) => l.id === lookId) || CHARACTER_LOOKS[0]
   const v = (id) => (values[id] || '').trim()
   const subjectBits = [
@@ -71,8 +74,12 @@ export function compileCharacter(values, lookId) {
   ].filter(Boolean)
   const moodBits = [v('expression'), v('eyes'), v('mood')].filter(Boolean)
   const lightBits = [v('keylight'), v('lightmood')].filter(Boolean)
+  let subject = subjectBits.join('. ')
+  if (locked && subject) {
+    subject += '. MANDATORY — CHARACTER CONSISTENCY LOCK: preserve this character\'s exact facial features, hair, wardrobe and ethnicity across every shot; no reinvention, no drift from the reference'
+  }
   return {
-    Subject: subjectBits.join('. '),
+    Subject: subject,
     Style: look.style,
     Lighting: lightBits.join(', '),
     Camera: look.framing,

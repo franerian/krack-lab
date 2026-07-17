@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react'
-import { UserRound, X, Sparkles, Save, Camera } from 'lucide-react'
+import { UserRound, X, Sparkles, Save, Camera, Lock, Unlock } from 'lucide-react'
 import { CHARACTER_FIELDS, CHARACTER_LOOKS, compileCharacter } from '../data/characterStudio.js'
 import { fillCharacter, isReady, providerHint } from '../lib/anthropic.js'
 import { fileToImage } from '../lib/image.js'
@@ -13,6 +13,10 @@ export default function CharacterStudio({ settings, characters, setCharacters, o
   const [desc, setDesc] = useState('')
   const [filling, setFilling] = useState(false)
   const [refImg, setRefImg] = useState(null)
+  // Lock de consistencia: agrega una regla MANDATORY al Subject cuando el
+  // personaje se usa en un prompt — para escenas seriadas donde no debe
+  // reinventarse entre planos (facial features, wardrobe, etnia).
+  const [locked, setLocked] = useState(true)
   const fileRef = useRef(null)
 
   const set = (id, v) => setValues((prev) => ({ ...prev, [id]: v }))
@@ -46,14 +50,15 @@ export default function CharacterStudio({ settings, characters, setCharacters, o
     const name = (values.name || '').trim() || 'Personaje sin nombre'
     setCharacters((prev) => [
       ...prev.filter((c) => c.name !== name),
-      { name, look, values },
+      { name, look, values, locked },
     ])
-    toast(`“${name}” guardado`, 'ok')
+    toast(`“${name}” guardado${locked ? ' · lock ON' : ''}`, 'ok')
   }
 
   const loadCharacter = (c) => {
     setValues(c.values)
     setLook(c.look)
+    setLocked(c.locked !== false) // compat con personajes viejos sin el flag
   }
 
   return (
@@ -143,9 +148,20 @@ export default function CharacterStudio({ settings, characters, setCharacters, o
           <button className="btn" onClick={handleSave}><Save className="ico" />Guardar personaje</button>
           <div style={{ flex: 1 }} />
           <button
+            type="button"
+            className={'lock-toggle' + (locked ? ' locked' : '')}
+            onClick={() => setLocked((v) => !v)}
+            title={locked
+              ? 'Consistency lock ON — el personaje se replica idéntico entre planos'
+              : 'Consistency lock OFF — el modelo puede reinterpretar rasgos'}
+          >
+            {locked ? <Lock className="ico" /> : <Unlock className="ico" />}
+            {locked ? 'Lock ON' : 'Lock OFF'}
+          </button>
+          <button
             className="btn primary"
             onClick={() => {
-              const compiled = compileCharacter(values, look)
+              const compiled = compileCharacter(values, look, locked)
               onUse(compiled)
               onClose()
             }}

@@ -45,7 +45,23 @@ function Group({ label, presets, defaultOpen = false, children, count }) {
   )
 }
 
-export default function PresetSidebar({ open, favorites, onToggleFav, onInsert, customPresets, onDeleteCustom, sections, onHoverPreset }) {
+// Etiqueta corta del proveedor+modelo actual para el panel de status.
+const providerBadge = (s) => {
+  if (!s) return { name: '—', model: '' }
+  if (s.provider === 'ollama') return { name: 'Ollama', model: s.ollamaModel || 'sin modelo' }
+  if (s.provider === 'pollinations') return { name: 'Pollinations', model: s.pollinationsModel || 'openai' }
+  if (s.provider === 'fireworks') return { name: 'Fireworks', model: s.fireworksModel || 'kimi-k2p7-code' }
+  return { name: 'Gemini', model: s.geminiModel || 'gemini-2.5-flash' }
+}
+
+const AR_OPTIONS = ['16:9', '9:16', '1:1', '4:3', '3:4', '2.39:1']
+
+export default function PresetSidebar({
+  open, favorites, onToggleFav, onInsert, customPresets, onDeleteCustom,
+  sections, onHoverPreset,
+  // Panel de status arriba (siempre visible, no ocupa espacio ni requiere abrir Ajustes)
+  settings, onOpenSettings, ar, setAr,
+}) {
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
 
@@ -94,8 +110,43 @@ export default function PresetSidebar({ open, favorites, onToggleFav, onInsert, 
 
   const totalShown = filtered.reduce((n, g) => n + g.presets.length, 0)
 
+  const badge = providerBadge(settings)
+  const wordCount = sections.reduce((n, s) => n + (s.text.trim().split(/\s+/).filter(Boolean).length), 0)
+  const filledSections = sections.filter((s) => s.text.trim()).length
+
   return (
     <aside className={'sidebar' + (open ? ' open' : '')}>
+      {settings && (
+        <div className="status-panel">
+          <div className="status-row">
+            <span className="slate-label">Modelo</span>
+            <button
+              type="button"
+              className="status-value"
+              onClick={onOpenSettings}
+              title="Cambiar en Ajustes"
+            >
+              <span className="status-provider">{badge.name}</span>
+              <span className="status-model">{badge.model}</span>
+            </button>
+          </div>
+          <div className="status-row">
+            <span className="slate-label">Aspecto</span>
+            <select
+              className="status-ar"
+              value={ar || '16:9'}
+              onChange={(e) => setAr && setAr(e.target.value)}
+              title="Aspect ratio para exportar y generar"
+            >
+              {AR_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div className="status-row">
+            <span className="slate-label">Prompt</span>
+            <span className="status-meta">{filledSections} secc · {wordCount} palabras</span>
+          </div>
+        </div>
+      )}
       <div className="sidebar-search">
         <input
           placeholder={`Buscar en ${PRESET_GROUPS.reduce((n, g) => n + g.presets.length, 0)} presets…`}

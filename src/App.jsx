@@ -441,6 +441,10 @@ export default function App() {
         onDeleteCustom={(p) => setCustomPresets((prev) => prev.filter((x) => x.id !== p.id))}
         sections={sections}
         onHoverPreset={(p) => setHoverMark(p ? { section: p.section, text: p.text } : null)}
+        settings={settings}
+        onOpenSettings={() => setShowSettings(true)}
+        ar={exportAr}
+        setAr={setExportAr}
       />
 
       {showCS && (
