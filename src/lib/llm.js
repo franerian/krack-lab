@@ -25,6 +25,27 @@ export const GEMINI_MODELS = [
 //   - Kimi K2.7 Code (kimi-k2p7-code) responde correctamente con visión
 //   - MiniMax M3 (minimax-m3) tiene visión declarada pero identifica MAL
 //     los colores en pruebas básicas — recomendado SOLO para texto.
+// Modelos de Fireworks que razonan TANTO en el content (no en reasoning_content
+// separado) que rompen tareas de output puro tipo Pulir: gastan miles de tokens
+// planificando y contando palabras antes (o en lugar) de emitir el prompt final.
+// Verificado con Kimi K2.7 Code: 1720 palabras de razonamiento inline, cortado.
+export const FIREWORKS_HEAVY_REASONERS = ['kimi-k2p7-code', 'kimi-k2p6', 'deepseek-v4-pro']
+
+// Selecciona un modelo "directo" (no razonador) para tareas que necesitan
+// output puro. Solo transforma settings cuando el modelo actual es un
+// razonador conocido y hay una alternativa buena en el mismo proveedor.
+// Devuelve { settings, override } — override indica si hubo cambio (para
+// mostrarlo en el toast al usuario).
+export function pickDirectModel(settings) {
+  if (settings.provider === 'fireworks' && FIREWORKS_HEAVY_REASONERS.includes(settings.fireworksModel)) {
+    return {
+      settings: { ...settings, fireworksModel: 'minimax-m3', fireworksVision: false },
+      override: `${settings.fireworksModel} razona demasiado para pulir — se usa MiniMax M3`,
+    }
+  }
+  return { settings, override: null }
+}
+
 export const FIREWORKS_MODELS = [
   { id: 'kimi-k2p7-code', label: 'Kimi K2.7 Code · visión — recomendado ($4/M out)', vision: true },
   { id: 'minimax-m3', label: 'MiniMax M3 · SOLO TEXTO — visión falla ($1.20/M out)', vision: false },
