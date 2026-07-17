@@ -108,7 +108,10 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     if (!images.length) return toast('Cargá primero una imagen de referencia', 'error')
     if (!isReady(settings)) return toast(providerHint(settings), 'error')
     setBusy(true)
-    const imgPayload = images.map((i) => ({ base64: i.base64, mediaType: i.mediaType }))
+    // Usa la versión chica (512max, JPEG 0.75) para el LLM — ahorra ~5x
+    // en tokens de imagen sin perder señal de estilo. La grande queda para
+    // display, mediciones y CLIP.
+    const imgPayload = images.map((i) => ({ base64: i.llmBase64 || i.base64, mediaType: i.mediaType }))
     let measurements = images.length > 1 ? multiMeasurementsToText(images) : measurementsToText(metrics, meta)
     try {
       if (deep) {

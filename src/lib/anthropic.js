@@ -265,7 +265,10 @@ PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference �
 2. If OBJECTIVE COMPARISON DATA is provided, treat it as measured fact and compensate explicitly (e.g. generation more saturated than original → lower the saturation wording).
 3. Output the CORRECTED full prompt in the exact same section format — nothing else. Strengthen constraints where the generation drifted, add what it lost, remove or soften what it over-produced. Never describe the generation; describe what the NEXT generation must do to match the ORIGINAL.`
   const user = `CURRENT PROMPT (the one that produced the second image):\n${draftText}${comparisonData ? `\n\n${comparisonData}` : ''}\n\nFirst image = ORIGINAL reference (target). Second image = generation to correct. Output the corrected prompt.`
-  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: [original, generated] })
+  // Usa la versión chica del base64 (512max, 0.75) para ahorrar tokens; si
+  // el caller no la calculó (ej. imagen del historial), cae al base64 normal.
+  const asLlm = (im) => ({ base64: im.llmBase64 || im.base64, mediaType: im.mediaType })
+  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: [asLlm(original), asLlm(generated)] })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
   const sections = mergeOverDraft(draft, parsed.filter((s) => !banned.includes(s.name)))
   const trace = { pass: 'refine', system, user, raw, retried }
