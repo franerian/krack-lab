@@ -27,6 +27,7 @@ export default function App() {
     provider: 'gemini', geminiKey: '', geminiModel: 'gemini-2.5-flash',
     ollamaUrl: OLLAMA_DEFAULT_URL, ollamaModel: '',
     pollinationsToken: '', pollinationsModel: 'openai', pollinationsVision: false,
+    fireworksToken: '', fireworksModel: 'kimi-k2p7-code', fireworksVision: true,
   })
 
   // Migración: el proveedor Claude (API) fue reemplazado por Pollinations.

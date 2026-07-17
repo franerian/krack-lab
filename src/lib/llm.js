@@ -1,6 +1,6 @@
-// Transporte LLM: clientes Gemini/Pollinations/Ollama para el navegador,
-// despacho por proveedor, timeouts y cancelación. El prompt-engineering vive
-// en anthropic.js (acciones) — acá solo viaja texto.
+// Transporte LLM: clientes Gemini/Pollinations/Fireworks/Ollama para el
+// navegador, despacho por proveedor, timeouts y cancelación. El prompt-
+// engineering vive en anthropic.js (acciones) — acá solo viaja texto.
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
 // API nueva (gen.pollinations.ai, docs en github.com/pollinations/pollinations/
@@ -9,11 +9,29 @@ const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
 // exige un desafío Turnstile que bloquea las apps web incluso con key.
 const POLLINATIONS_CHAT_URL = 'https://gen.pollinations.ai/v1/chat/completions'
 const POLLINATIONS_MODELS_URL = 'https://gen.pollinations.ai/v1/models'
+// Fireworks también OpenAI-compat, Bearer con key fw_. Los slugs usan "p"
+// en lugar de "." (ej. kimi-k2p7-code, no kimi-k2.7-code — verificado).
+const FIREWORKS_CHAT_URL = 'https://api.fireworks.ai/inference/v1/chat/completions'
 export const OLLAMA_DEFAULT_URL = 'http://localhost:11434'
 
 export const GEMINI_MODELS = [
   { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (visión, recomendado)' },
   { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (más cupo diario)' },
+]
+
+// Catálogo curado de Fireworks. Los slugs son "accounts/fireworks/models/<id>";
+// acá guardamos solo el <id> (el prefijo se agrega en el request).
+// Verificado 2026-07-15 con la key de Fran:
+//   - Kimi K2.7 Code (kimi-k2p7-code) responde correctamente con visión
+//   - MiniMax M3 (minimax-m3) tiene visión declarada pero identifica MAL
+//     los colores en pruebas básicas — recomendado SOLO para texto.
+export const FIREWORKS_MODELS = [
+  { id: 'kimi-k2p7-code', label: 'Kimi K2.7 Code · visión — recomendado ($4/M out)', vision: true },
+  { id: 'minimax-m3', label: 'MiniMax M3 · SOLO TEXTO — visión falla ($1.20/M out)', vision: false },
+  { id: 'qwen3p7-plus', label: 'Qwen3.7 Plus · visión ($1.60/M out)', vision: true },
+  { id: 'kimi-k2p6', label: 'Kimi K2.6 · visión ($4/M out)', vision: true },
+  { id: 'glm-5p2', label: 'GLM 5.2 · texto', vision: false },
+  { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro · texto', vision: false },
 ]
 
 // Key demo del free tier de Google (sin tarjeta asociada: el peor caso es
@@ -166,6 +184,76 @@ export async function callPollinations({ token, model, system, user, maxTokens =
   }, 'No se pudo conectar con Pollinations (red o servicio caído). Reintentá en unos segundos.')
 }
 
+// ── Fireworks (api.fireworks.ai, formato OpenAI) ──
+// Requiere key fw_ del usuario (créditos pagos). Los slugs Fireworks usan "p"
+// donde el catálogo web muestra "." (kimi-k2p7-code = "Kimi K2.7 Code").
+// Los modelos razonadores (Kimi, MiniMax, DeepSeek…) devuelven el pensamiento
+// en `message.reasoning_content` separado del `content` — se descarta y solo
+// se lee el content final. Si finish_reason es "length" y content está vacío,
+// se reintenta con más margen (mismo patrón que Pollinations/Gemini/Ollama).
+export async function callFireworks({ token, model, system, user, maxTokens = 2000, image, images }) {
+  if (!token) throw new Error('NO_FIREWORKS_KEY')
+  const imgs = images || (image ? [image] : null)
+  const content = imgs
+    ? [
+        { type: 'text', text: user },
+        ...imgs.map((im) => ({
+          type: 'image_url',
+          image_url: { url: `data:${im.mediaType};base64,${im.base64}` },
+        })),
+      ]
+    : user
+  const slug = `accounts/fireworks/models/${model || 'kimi-k2p7-code'}`
+  return withAbort(180_000, async (signal) => {
+    const doCall = async (tokenBudget) => {
+      const res = await fetch(FIREWORKS_CHAT_URL, {
+        method: 'POST',
+        signal,
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          model: slug,
+          max_tokens: tokenBudget,
+          temperature: 0.7,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content },
+          ],
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        if (res.status === 401 || res.status === 403) {
+          throw new Error('Key de Fireworks inválida o sin permiso — revisá Ajustes')
+        }
+        if (res.status === 402) {
+          throw new Error('Fireworks: sin créditos — recargá en fireworks.ai o cambiá de proveedor en Ajustes')
+        }
+        if (res.status === 429) {
+          throw new Error('Límite de Fireworks alcanzado — esperá un momento y reintentá')
+        }
+        if (res.status === 404 || /model not found|not deployed/i.test(body)) {
+          throw new Error(`Fireworks no reconoce el modelo "${model}" — usá slugs con "p" en vez de "." (ej. kimi-k2p7-code)`)
+        }
+        throw new Error(`Fireworks ${res.status}: ${body.slice(0, 300)}`)
+      }
+      return res.json()
+    }
+    let data = await doCall(maxTokens + 1024)
+    let choice = data.choices?.[0]
+    // Razonadores agotan el presupuesto pensando (reasoning_content va aparte).
+    if (choice?.finish_reason === 'length' && !choice.message?.content) {
+      data = await doCall(maxTokens + 8192)
+      choice = data.choices?.[0]
+    }
+    const text = stripThink(choice?.message?.content || '')
+    if (!text) throw new Error('Fireworks no devolvió texto (el modelo agotó la respuesta razonando) — probá con otro modelo del catálogo')
+    return text
+  }, 'No se pudo conectar con Fireworks (red o servicio caído). Reintentá en unos segundos.')
+}
+
 export async function callOllama({ url, model, system, user, maxTokens = 2000, image, images }) {
   if (!model) throw new Error('NO_OLLAMA_MODEL')
   const base = (url || OLLAMA_DEFAULT_URL).replace(/\/$/, '')
@@ -298,6 +386,17 @@ export function callLLM(settings, { system, user, maxTokens, image, images }) {
       token: settings.pollinationsToken, model: settings.pollinationsModel, system, user, maxTokens, image, images,
     })
   }
+  if (settings.provider === 'fireworks') {
+    // Mismo guard: MiniMax M3 declara visión pero identifica MAL los colores
+    // (verificado con imagen roja pura → dijo "Black"). Solo se bloquea si
+    // el modelo está marcado explícitamente como vision:false en el catálogo.
+    if ((image || images?.length) && settings.fireworksVision === false) {
+      return Promise.reject(new Error('Este modelo de Fireworks no tiene visión funcional — elegí Kimi K2.7 Code u otro con visión en Ajustes'))
+    }
+    return callFireworks({
+      token: settings.fireworksToken, model: settings.fireworksModel, system, user, maxTokens, image, images,
+    })
+  }
   // Default: Gemini (modo demo con key gratuita embebida, o la del usuario).
   return callGemini({
     apiKey: settings.geminiKey, model: settings.geminiModel, system, user, maxTokens, image, images,
@@ -308,11 +407,13 @@ export function callLLM(settings, { system, user, maxTokens, image, images }) {
 export function isReady(settings) {
   if (settings.provider === 'ollama') return !!settings.ollamaModel
   if (settings.provider === 'pollinations') return !!settings.pollinationsToken
+  if (settings.provider === 'fireworks') return !!settings.fireworksToken
   return true // gemini: la key demo siempre está disponible
 }
 
 export function providerHint(settings) {
   if (settings.provider === 'ollama') return 'Elegí un modelo de Ollama en Ajustes'
   if (settings.provider === 'pollinations') return 'Pegá tu key gratuita de enter.pollinations.ai en Ajustes'
+  if (settings.provider === 'fireworks') return 'Pegá tu key fw_ de fireworks.ai en Ajustes'
   return 'El proveedor debería funcionar — revisá Ajustes'
 }

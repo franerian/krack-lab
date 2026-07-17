@@ -15,7 +15,8 @@ import { addRun, getRuns } from '../lib/dnaLog.js'
 const nowIso = () => new Date().toISOString().replace('T', ' ').slice(0, 19)
 const modelLabel = (s) =>
   s.provider === 'ollama' ? s.ollamaModel
-  : s.provider === 'pollinations' ? (s.pollinationsModel || 'openai-fast')
+  : s.provider === 'pollinations' ? (s.pollinationsModel || 'openai')
+  : s.provider === 'fireworks' ? (s.fireworksModel || 'kimi-k2p7-code')
   : (s.geminiModel || 'gemini')
 
 const MAX_REFS = 5

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Settings, X, Sparkles, Copy, RefreshCw } from 'lucide-react'
-import { GEMINI_MODELS, callLLM, listOllamaModels, listPollinationsModels, OLLAMA_DEFAULT_URL } from '../lib/anthropic.js'
+import { GEMINI_MODELS, FIREWORKS_MODELS, callLLM, listOllamaModels, listPollinationsModels, OLLAMA_DEFAULT_URL } from '../lib/anthropic.js'
 
 export default function SettingsModal({ settings, setSettings, onClose, toast }) {
   const [provider, setProvider] = useState(settings.provider || 'gemini')
@@ -15,6 +15,9 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
   const [pollToken, setPollToken] = useState(settings.pollinationsToken || '')
   const [pollModel, setPollModel] = useState(settings.pollinationsModel || 'openai')
   const [pollModels, setPollModels] = useState([])
+  // Fireworks: catálogo curado (FIREWORKS_MODELS) + slug tipeable
+  const [fwToken, setFwToken] = useState(settings.fireworksToken || '')
+  const [fwModel, setFwModel] = useState(settings.fireworksModel || FIREWORKS_MODELS[0].id)
   const [testing, setTesting] = useState(false)
 
   // Diagnóstico de conexión: distingue "no corre" de "corre pero CORS bloquea".
@@ -68,6 +71,9 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
     // vision del catálogo si el modelo está listado; undefined (desconocido)
     // si lo tipeó a mano — en ese caso no se bloquea el uso con imágenes.
     pollinationsVision: pollModels.find((m) => m.id === pollModel.trim())?.vision,
+    fireworksToken: fwToken.trim(),
+    fireworksModel: fwModel.trim() || 'kimi-k2p7-code',
+    fireworksVision: FIREWORKS_MODELS.find((m) => m.id === fwModel.trim())?.vision,
   }
 
   const test = async () => {
@@ -105,6 +111,10 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
                 className={'tab' + (provider === 'pollinations' ? ' active' : '')}
                 onClick={() => setProvider('pollinations')}
               >Pollinations</button>
+              <button
+                className={'tab' + (provider === 'fireworks' ? ' active' : '')}
+                onClick={() => setProvider('fireworks')}
+              >Fireworks</button>
             </div>
           </div>
 
@@ -165,6 +175,40 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
                 (su tier anónimo usa un anti-bot que bloquea las apps web). Con la key accedés a
                 su catálogo multi-modelo — incluidos modelos con <b>visión</b>, necesarios para el
                 Style DNA Lab; escribí el nombre del modelo arriba. La key se guarda solo en tu navegador.
+              </p>
+            </>
+          )}
+
+          {provider === 'fireworks' && (
+            <>
+              <div className="field">
+                <label>Modelo (elegí uno curado o escribí el slug de fireworks.ai)</label>
+                <input
+                  list="fw-models"
+                  value={fwModel}
+                  placeholder="kimi-k2p7-code"
+                  onChange={(e) => setFwModel(e.target.value)}
+                />
+                <datalist id="fw-models">
+                  {FIREWORKS_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </datalist>
+              </div>
+              <div className="field">
+                <label>Key de Fireworks (requerida)</label>
+                <input
+                  type="password"
+                  value={fwToken}
+                  placeholder="fw_…"
+                  onChange={(e) => setFwToken(e.target.value)}
+                />
+              </div>
+              <p className="hint">
+                Requiere una API key <code>fw_</code> de{' '}
+                <a href="https://fireworks.ai" target="_blank" rel="noreferrer">fireworks.ai</a>{' '}
+                (con créditos). Para el Style DNA Lab conviene <b>Kimi K2.7 Code</b> — verificado con
+                visión funcional. <b>MiniMax M3</b> es el más barato pero su visión falla (identifica
+                mal los colores) — usalo solo para tareas de texto. Los slugs de Fireworks usan
+                “p” en vez de “.” (ej. <code>kimi-k2p7-code</code>). La key se guarda solo en tu navegador.
               </p>
             </>
           )}
@@ -239,7 +283,7 @@ export default function SettingsModal({ settings, setSettings, onClose, toast })
           <button
             className="btn"
             onClick={test}
-            disabled={testing || (provider === 'ollama' ? !ollamaModel : provider === 'pollinations' ? !pollToken.trim() : false)}
+            disabled={testing || (provider === 'ollama' ? !ollamaModel : provider === 'pollinations' ? !pollToken.trim() : provider === 'fireworks' ? !fwToken.trim() : false)}
           >
             {testing ? <span className="spinner" /> : ''}Probar conexión
           </button>
