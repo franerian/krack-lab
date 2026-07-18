@@ -27,7 +27,7 @@ const modelLabel = (s) =>
 
 const MAX_REFS = 5
 
-export default function StyleLab({ settings, onApply, onReplace, onSavePreset, onClose, toast, target, setTarget, ar, setAr, imageProvider }) {
+export default function StyleLab({ settings, onApply, onReplace, onSavePreset, onClose, toast, target, setTarget, ar, setAr, imageProvider, onOpenBuilder }) {
   // Referencias de estilo: 1 en modo réplica, hasta MAX_REFS en "solo estilo".
   // Cada item: { dataUrl, base64, mediaType, file, metrics, meta }.
   const [images, setImages] = useState([])
@@ -472,14 +472,29 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                     </div>
                   ))}
                 </div>
-                <button
-                  className="btn small"
-                  onClick={() => {
-                    const cap = buildIdeogramCaption({ sections: result || [], elements })
-                    navigator.clipboard.writeText(JSON.stringify(cap, null, 1))
-                    toast('Caption JSON de Ideogram copiado (con bboxes y paletas)', 'ok')
-                  }}
-                ><Copy className="ico" />Copiar JSON Ideogram</button>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button
+                    className="btn small"
+                    onClick={() => {
+                      const cap = buildIdeogramCaption({ sections: result || [], elements })
+                      navigator.clipboard.writeText(JSON.stringify(cap, null, 1))
+                      toast('Caption JSON de Ideogram copiado (con bboxes y paletas)', 'ok')
+                    }}
+                  ><Copy className="ico" />Copiar JSON Ideogram</button>
+                  {onOpenBuilder && (
+                    <button
+                      className="btn small"
+                      title="Ajustar las cajas y descripciones en el Layout Builder"
+                      onClick={() => {
+                        const S = (n) => (result || []).find((s) => s.name === n)?.text || ''
+                        onOpenBuilder({
+                          elements, image: primary.dataUrl, sections: result || [],
+                          background: S('Environment'), highLevel: S('Subject'),
+                        })
+                      }}
+                    ><Plus className="ico" />Abrir en Layout Builder</button>
+                  )}
+                </div>
               </div>
             )}
             <button className="btn primary" style={{ width: '100%' }} onClick={analyze} disabled={busy || !images.length}>

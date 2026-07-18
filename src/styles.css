@@ -342,6 +342,51 @@ body {
 .el-palette { display: flex; gap: 3px; flex: none; }
 .el-palette .accent-chip { width: 13px; height: 13px; border-radius: 4px; }
 
+/* ── Layout Builder (cajas estilo Ideogram Prompt Builder) ── */
+.lb-body { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: start; }
+.lb-left { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.lb-canvas {
+  position: relative; width: 100%; border-radius: var(--radius-lg);
+  border: 1.5px dashed var(--border-strong); background: var(--bg);
+  overflow: hidden; cursor: crosshair; touch-action: none; user-select: none;
+}
+.lb-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.lb-hint-empty {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  text-align: center; color: var(--text-faint); font-size: 12.5px; line-height: 1.6;
+  pointer-events: none;
+}
+.lb-box {
+  position: absolute; border: 2px solid; border-radius: 4px; cursor: move;
+  min-width: 4px; min-height: 4px;
+}
+.lb-box.active { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25); }
+.lb-handle {
+  position: absolute; width: 11px; height: 11px; background: var(--bg-panel);
+  border: 2px solid; border-radius: 3px;
+}
+.lb-handle.tl { top: -6px; left: -6px; cursor: nwse-resize; }
+.lb-handle.tr { top: -6px; right: -6px; cursor: nesw-resize; }
+.lb-handle.bl { bottom: -6px; left: -6px; cursor: nesw-resize; }
+.lb-handle.br { bottom: -6px; right: -6px; cursor: nwse-resize; }
+.lb-toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+.lb-right { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.lb-regions { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; }
+.lb-region-row {
+  display: flex; align-items: center; gap: 8px; text-align: left;
+  padding: 6px 8px; border: 1px solid var(--border); border-left-width: 3px;
+  border-radius: 8px; background: var(--bg); cursor: pointer; min-width: 0;
+  color: var(--text-dim); font: inherit;
+}
+.lb-region-row.active { background: var(--bg-raised); color: var(--text); }
+.lb-inspector {
+  display: flex; flex-direction: column; gap: 10px;
+  border-top: 1px solid var(--border); padding-top: 12px;
+}
+@media (max-width: 860px) {
+  .lb-body { grid-template-columns: 1fr; }
+}
+
 /* Aviso discreto en el DNA Lab cuando se aplica un fallback automático
    de modelo (razonador puro → modelo directo). */
 .model-override {
@@ -405,6 +450,7 @@ body {
   box-shadow: var(--shadow);
 }
 .modal.narrow { width: min(480px, 94vw); }
+.modal.wide { width: min(1100px, 96vw); }
 .modal-head {
   display: flex; align-items: center; gap: 14px;
   padding: 16px 20px; border-bottom: 1px solid var(--border);
