@@ -6,7 +6,8 @@ import LogViewer from './LogViewer.jsx'
 import ImageResult from './ImageResult.jsx'
 import { clipSimilarity } from '../lib/clip.js'
 import { fileToImage } from '../lib/image.js'
-import { measureImage, extractFileMetadata, measurementsToText, multiMeasurementsToText, aggregateMetrics } from '../lib/imageAnalysis.js'
+import { measureImage, extractFileMetadata, measurementsToText, multiMeasurementsToText, aggregateMetrics, paletteForRegion } from '../lib/imageAnalysis.js'
+import { bboxToBox, buildIdeogramCaption } from '../lib/ideogram.js'
 import { florenceGrounding, groundingToText } from '../lib/florence.js'
 import { highlightHtml } from '../lib/highlight.js'
 import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
@@ -68,10 +69,14 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   const [showLog, setShowLog] = useState(false)
   const [runCount, setRunCount] = useState(() => getRuns().length)
 
+  // Mapa espacial (modo réplica + Structured Outputs): elementos con bbox
+  // y paleta local, en el schema de Ideogram.
+  const [elements, setElements] = useState([])
+
   // Al cambiar el set de referencias, se invalida el análisis previo.
   const resetAnalysis = () => {
     setResult(null); setGrounding(null); setGenImg(null)
-    setClipScore(null); setVersion(1); setHistory([])
+    setClipScore(null); setVersion(1); setHistory([]); setElements([])
   }
 
   // Carga y mide una o varias imágenes. En réplica reemplaza (una sola);
@@ -139,6 +144,17 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
       let r = await analyzeImageStyle({ settings, images: imgPayload, mode, measurements })
       passes.push(r.trace)
       let sections = r.sections
+      // Mapa espacial: bbox → fracciones + paleta local medida del crop.
+      if (r.elements?.length) {
+        const els = await Promise.all(r.elements.map(async (e) => {
+          const box = bboxToBox(e.bbox)
+          const palette = await paletteForRegion(primary.dataUrl, box)
+          return { desc: e.desc, box, palette, type: 'obj' }
+        }))
+        setElements(els)
+      } else {
+        setElements([])
+      }
       if (verify) {
         setPass(2)
         setResult(sections) // muestra el borrador mientras verifica
@@ -424,6 +440,46 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                     <Crosshair className="ico" />¡Prompt original embebido detectado! ({meta.source}) — se usará como fuente principal
                   </div>
                 )}
+              </div>
+            )}
+            {elements.length > 0 && primary && (
+              <div className="metrics-panel">
+                <div className="metrics-title">
+                  Mapa de elementos <span className="metrics-sub">· {elements.length} detectados</span>
+                </div>
+                <div className="elements-map">
+                  <img src={primary.dataUrl} alt="mapa" />
+                  {elements.map((el, i) => (
+                    <div
+                      key={i}
+                      className="el-box"
+                      title={el.desc}
+                      style={{
+                        left: `${el.box.x * 100}%`, top: `${el.box.y * 100}%`,
+                        width: `${el.box.w * 100}%`, height: `${el.box.h * 100}%`,
+                      }}
+                    ><span className="el-num">{String(i + 1).padStart(2, '0')}</span></div>
+                  ))}
+                </div>
+                <div className="el-list">
+                  {elements.map((el, i) => (
+                    <div key={i} className="el-row" title={el.desc}>
+                      <span className="el-num-badge">{String(i + 1).padStart(2, '0')}</span>
+                      <span className="el-desc">{el.desc}</span>
+                      <span className="el-palette">
+                        {el.palette.map((h) => <span key={h} className="accent-chip" style={{ background: h }} title={h} />)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  className="btn small"
+                  onClick={() => {
+                    const cap = buildIdeogramCaption({ sections: result || [], elements })
+                    navigator.clipboard.writeText(JSON.stringify(cap, null, 1))
+                    toast('Caption JSON de Ideogram copiado (con bboxes y paletas)', 'ok')
+                  }}
+                ><Copy className="ico" />Copiar JSON Ideogram</button>
               </div>
             )}
             <button className="btn primary" style={{ width: '100%' }} onClick={analyze} disabled={busy || !images.length}>

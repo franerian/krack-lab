@@ -317,6 +317,31 @@ body {
   background: var(--accent-tint);
 }
 
+/* Mapa espacial de elementos (schema Ideogram) en el DNA Lab */
+.elements-map { position: relative; border-radius: var(--radius); overflow: hidden; }
+.elements-map img { display: block; width: 100%; }
+.el-box {
+  position: absolute; border: 1.5px solid var(--accent);
+  background: rgba(248, 97, 90, 0.08); border-radius: 3px;
+}
+.el-num {
+  position: absolute; top: 2px; left: 2px;
+  font: 700 9px var(--font-mono); color: #fff;
+  background: var(--accent); padding: 1px 4px; border-radius: 3px;
+}
+.el-list { display: flex; flex-direction: column; gap: 4px; }
+.el-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.el-num-badge {
+  flex: none; font: 700 9px var(--font-mono); color: var(--accent);
+  border: 1px solid var(--accent-glow); padding: 1px 4px; border-radius: 4px;
+}
+.el-desc {
+  flex: 1; min-width: 0; font-size: 11px; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.el-palette { display: flex; gap: 3px; flex: none; }
+.el-palette .accent-chip { width: 13px; height: 13px; border-radius: 4px; }
+
 /* Aviso discreto en el DNA Lab cuando se aplica un fallback automático
    de modelo (razonador puro → modelo directo). */
 .model-override {

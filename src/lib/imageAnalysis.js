@@ -132,6 +132,38 @@ function detectAccents(pixels, centroids) {
 
 const gcd = (a, b) => (b ? gcd(b, a % b) : a)
 
+// Paleta local de una región de la imagen (box en fracciones 0-1). Croppea
+// a un canvas chico y corre el mismo k-means: alimenta la color_palette por
+// elemento del schema Ideogram (fase espacial del DNA Lab / Layout Builder).
+export function paletteForRegion(dataUrl, box, top = 4) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const sx = Math.max(0, Math.round(box.x * img.naturalWidth))
+      const sy = Math.max(0, Math.round(box.y * img.naturalHeight))
+      const sw = Math.max(1, Math.round(box.w * img.naturalWidth))
+      const sh = Math.max(1, Math.round(box.h * img.naturalHeight))
+      const SIZE = 64
+      const canvas = document.createElement('canvas')
+      canvas.width = SIZE
+      canvas.height = SIZE
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
+      try {
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, SIZE, SIZE)
+        const { data } = ctx.getImageData(0, 0, SIZE, SIZE)
+        const pixels = []
+        for (let i = 0; i < data.length; i += 4) pixels.push([data[i], data[i + 1], data[i + 2]])
+        const { palette } = kmeansPalette(pixels, 6)
+        resolve(palette.slice(0, top).map((c) => c.hex.toUpperCase()))
+      } catch {
+        resolve([])
+      }
+    }
+    img.onerror = () => resolve([])
+    img.src = dataUrl
+  })
+}
+
 // Mide paleta, luminancia, contraste, saturación y AR desde un dataURL.
 export function measureImage(dataUrl) {
   return new Promise((resolve, reject) => {

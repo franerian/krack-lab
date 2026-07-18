@@ -53,11 +53,30 @@ FORMAT REMINDER: your previous reply could not be parsed. Respond ONLY with the 
 const ALL_SECTION_KEYS = ['Subject', 'Style', 'Composition', 'Camera', 'Lighting', 'Color', 'Mood', 'Action', 'Environment', 'Negative']
 const STYLE_BANNED = new Set(['Subject', 'Action', 'Environment'])
 
-export function sectionsSchema(mode = 'style') {
+export function sectionsSchema(mode = 'style', { withElements = false } = {}) {
   const keys = ALL_SECTION_KEYS.filter((k) => mode === 'replica' || !STYLE_BANNED.has(k))
   const properties = {}
   for (const k of keys) properties[k] = { type: 'string' }
-  return { type: 'object', properties, required: keys, additionalProperties: false }
+  const required = [...keys]
+  if (withElements) {
+    // Mapa espacial (schema Ideogram): los objetos visuales principales con
+    // bbox en grilla 0-1000 [ymin,xmin,ymax,xmax]. Solo en modo réplica.
+    properties.Elements = {
+      type: 'array',
+      maxItems: 8,
+      items: {
+        type: 'object',
+        properties: {
+          desc: { type: 'string' },
+          bbox: { type: 'array', items: { type: 'integer' }, minItems: 4, maxItems: 4 },
+        },
+        required: ['desc', 'bbox'],
+        additionalProperties: false,
+      },
+    }
+    required.push('Elements')
+  }
+  return { type: 'object', properties, required, additionalProperties: false }
 }
 
 const jsonToSections = (obj) => {
@@ -75,10 +94,11 @@ async function callParsed(settings, req) {
   const useSchema = req.schema && supportsStructured(settings)
   let raw = await callLLM(settings, useSchema ? { ...req, responseSchema: req.schema } : req)
   let parsed = []
+  let json = null // objeto crudo (para campos extra del schema, ej. Elements)
   if (useSchema) {
     try {
-      const obj = JSON.parse(raw)
-      parsed = jsonToSections(obj)
+      json = JSON.parse(raw)
+      parsed = jsonToSections(json)
     } catch { /* cae al parseo por texto abajo */ }
   }
   if (!parsed.length) parsed = textToSections(raw)
@@ -88,7 +108,7 @@ async function callParsed(settings, req) {
     raw = await callLLM(settings, { ...req, user: req.user + FORMAT_REMINDER })
     parsed = textToSections(raw)
   }
-  return { raw, parsed, retried }
+  return { raw, parsed, retried, json }
 }
 
 // Las pasadas correctivas (autocrítica, loop) reescriben un borrador que ya
@@ -276,15 +296,30 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
     : mode === 'style'
       ? 'Extract the Style DNA of this image. Style only — the content will be replaced by other scenes.'
       : 'Deconstruct this image into a full replication prompt, Style DNA first.'
-  const system = DNA_SYSTEM(mode)
+  // Mapa espacial: en modo réplica (una imagen, layout definido) se piden
+  // también los elementos con bbox — solo donde hay Structured Outputs que
+  // garanticen el formato (hoy Fireworks).
+  const wantElements = mode === 'replica' && !multi && settings.provider === 'fireworks'
+  let system = DNA_SYSTEM(mode)
+  if (wantElements) {
+    system += `\n\nSPATIAL MAP: additionally output "Elements" — the 2 to 6 most important distinct visual objects in the image. Each element: a short desc (what it is, its condition) and a TIGHT bbox as [ymin, xmin, ymax, xmax] on a 0-1000 grid (origin at top-left; 1000 = full height/width). Do not include the background as an element.`
+  }
   const withHint = hint.trim() ? `${base}\n\nUSER GUIDANCE (apply while extracting): ${hint.trim()}` : base
   const user = measurements ? `${withHint}\n\n${measurements}` : withHint
-  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: imgs, schema: sectionsSchema(mode) })
+  const { raw, parsed, retried, json } = await callParsed(settings, {
+    system, user, maxTokens: 1600, images: imgs,
+    schema: sectionsSchema(mode, { withElements: wantElements }),
+  })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
   const sections = parsed.filter((s) => !banned.includes(s.name))
   const trace = { pass: 'extract', system, user, raw, retried }
   if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
-  return { sections, trace }
+  // Elementos espaciales validados (bbox 0-1000 coherente y con área real).
+  const elements = (json?.Elements || [])
+    .filter((e) => Array.isArray(e.bbox) && e.bbox.length === 4 && e.desc)
+    .map((e) => ({ desc: e.desc, bbox: e.bbox.map((v) => Math.max(0, Math.min(1000, Math.round(v)))) }))
+    .filter((e) => e.bbox[2] > e.bbox[0] && e.bbox[3] > e.bbox[1])
+  return { sections, elements, trace }
 }
 
 // Pasada de autocrítica: compara el borrador contra la imagen y las
