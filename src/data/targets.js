@@ -15,6 +15,8 @@
 // - SDXL: convención establecida A1111/ComfyUI — tags por coma, lo importante
 //   primero, negative prompt en su campo.
 
+import { buildIdeogramCaption } from '../lib/ideogram.js'
+
 const get = (sections, name) => {
   const s = sections.find((x) => x.name === name)
   return s ? s.text.trim() : ''
@@ -161,6 +163,13 @@ export const TARGETS = [
     usesAr: false,
     compile: (sections) =>
       prose(sections, ['Style', 'Subject', 'Details', 'Action', 'Environment', 'Composition', 'Camera', 'Lighting', 'Color', 'Mood']),
+  },
+  {
+    id: 'ideogram',
+    label: 'Ideogram 4 (JSON)',
+    notes: 'Caption JSON estructurado de Ideogram 4 (docs.ideogram.ai, Prompt Builder): high_level_description + style_description (con color_palette en hex — acá los hex SÍ se usan) + compositional_deconstruction con background y elementos. Compatible con la app de Ideogram, Forge (forge-neo-ideogram4) y los nodes de ComfyUI. Para ubicar elementos con cajas (bbox), usá el Layout Builder.',
+    usesAr: false,
+    compile: (sections) => JSON.stringify(buildIdeogramCaption({ sections }), null, 1),
   },
   {
     id: 'plain',
