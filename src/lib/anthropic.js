@@ -351,6 +351,78 @@ PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference �
   return { sections, trace }
 }
 
+// Schema del caption de layout (para Structured Outputs): lo usan
+// "Construir desde imagen" y "Editar escena con IA" del Layout Builder.
+const CAPTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    high_level_description: { type: 'string' },
+    background: { type: 'string' },
+    elements: {
+      type: 'array',
+      maxItems: 8,
+      items: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['obj', 'text'] },
+          bbox: { type: 'array', items: { type: 'integer' }, minItems: 4, maxItems: 4 },
+          desc: { type: 'string' },
+          text: { type: 'string' },
+        },
+        required: ['type', 'bbox', 'desc'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['high_level_description', 'background', 'elements'],
+  additionalProperties: false,
+}
+
+const BBOX_RULES = 'bbox = [ymin, xmin, ymax, xmax] on a 0-1000 grid, origin top-left, tight around the object. background describes ONLY walls/ground/sky/light — every object goes in elements. All text in English.'
+
+const parseCaptionJson = (raw) => {
+  const obj = JSON.parse(raw)
+  const elements = (obj.elements || [])
+    .filter((e) => Array.isArray(e.bbox) && e.bbox.length === 4 && e.desc)
+    .map((e) => ({
+      type: e.type === 'text' ? 'text' : 'obj',
+      text: e.text || '',
+      desc: e.desc,
+      bbox: e.bbox.map((v) => Math.max(0, Math.min(1000, Math.round(v)))),
+    }))
+    .filter((e) => e.bbox[2] > e.bbox[0] && e.bbox[3] > e.bbox[1])
+  return { highLevel: obj.high_level_description || '', background: obj.background || '', elements }
+}
+
+// "Construir desde imagen" del Layout Builder: deconstruye la imagen de
+// fondo directamente al modelo de layout (más liviano que la réplica del
+// DNA Lab — no extrae estilo, solo composición y elementos).
+export async function layoutFromImage({ settings: rawSettings, image }) {
+  const { settings } = pickDirectModel(rawSettings, { needsVision: true })
+  const raw = await callLLM(settings, {
+    system: `Deconstruct the image into an Ideogram-style layout. Output: high_level_description (one sentence summarizing the whole image), background, and elements — the 2 to 6 most important distinct objects, each with a rich desc (what it is, condition, materials, pose). ${BBOX_RULES}`,
+    user: 'Deconstruct this image into the layout.',
+    maxTokens: 900,
+    image,
+    responseSchema: CAPTION_SCHEMA,
+  })
+  return parseCaptionJson(raw)
+}
+
+// "Editar escena con IA": aplica una instrucción en lenguaje natural al
+// caption actual (mover/agregar/quitar/redescribir elementos) y devuelve el
+// caption editado completo.
+export async function editLayout({ settings: rawSettings, caption, instruction }) {
+  const { settings } = pickDirectModel(rawSettings, { needsVision: false })
+  const raw = await callLLM(settings, {
+    system: `You edit an Ideogram layout caption. Apply the user's instruction; keep everything not mentioned unchanged (same bboxes, same descs). You may add, remove, move, resize or redescribe elements as instructed. ${BBOX_RULES}`,
+    user: `CURRENT CAPTION:\n${JSON.stringify(caption)}\n\nINSTRUCTION: ${instruction}`,
+    maxTokens: 1200,
+    responseSchema: CAPTION_SCHEMA,
+  })
+  return parseCaptionJson(raw)
+}
+
 // Layout Builder → prompt: convierte el caption espacial (descripciones del
 // usuario en cualquier idioma + bboxes + paletas) en secciones bien
 // redactadas EN INGLÉS. Los bboxes se traducen a lenguaje espacial en

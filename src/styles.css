@@ -343,7 +343,32 @@ body {
 .el-palette .accent-chip { width: 13px; height: 13px; border-radius: 4px; }
 
 /* ── Layout Builder (cajas estilo Ideogram Prompt Builder) ── */
-.lb-body { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: start; }
+.lb-body { display: grid; grid-template-columns: 1.5fr 1fr 0.8fr; gap: 16px; align-items: start; }
+
+/* Panel de JSON vivo (estilo Prompt Builder de Ideogram) */
+.lb-json {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--bg); padding: 10px 12px; max-height: 62vh;
+}
+.lb-json-head { display: flex; align-items: center; justify-content: space-between; }
+.lb-json-pre {
+  margin: 0; overflow: auto; flex: 1; white-space: pre-wrap; word-break: break-word;
+  font: 400 10.5px var(--font-mono); color: var(--text-dim); line-height: 1.5;
+}
+/* CTA centrado sobre el canvas ("Construir desde imagen") */
+.lb-cta {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 3; box-shadow: var(--shadow);
+}
+/* Fila "Editar escena con IA" */
+.lb-ai-edit { display: flex; gap: 6px; }
+.lb-ai-edit input {
+  flex: 1; padding: 7px 11px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
+  font: 400 12.5px var(--font-ui);
+}
+.lb-ai-edit input:focus { outline: none; border-color: var(--accent); }
 .lb-left { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .lb-canvas {
   position: relative; width: 100%; border-radius: var(--radius-lg);
@@ -385,6 +410,7 @@ body {
 }
 @media (max-width: 860px) {
   .lb-body { grid-template-columns: 1fr; }
+  .lb-json { max-height: 30vh; }
 }
 
 /* Aviso discreto en el DNA Lab cuando se aplica un fallback automático

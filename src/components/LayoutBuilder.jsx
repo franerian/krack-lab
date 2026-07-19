@@ -1,9 +1,28 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { LayoutGrid, X, Copy, Plus, Trash2, ImagePlus, ClipboardPaste, Send } from 'lucide-react'
+import { LayoutGrid, X, Copy, Plus, Trash2, ImagePlus, ClipboardPaste, Send, Sparkles } from 'lucide-react'
 import { buildIdeogramCaption, parseIdeogramCaption, captionToSections } from '../lib/ideogram.js'
 import { paletteForRegion } from '../lib/imageAnalysis.js'
 import { fileToImage } from '../lib/image.js'
-import { layoutToSections, isReady } from '../lib/anthropic.js'
+import { layoutToSections, layoutFromImage, editLayout, isReady, providerHint } from '../lib/anthropic.js'
+import { bboxToBox } from '../lib/ideogram.js'
+
+// Versión 512px del fondo para las llamadas de visión (mismo criterio de
+// ahorro de tokens que el DNA Lab).
+const dataUrlToLlmImage = (dataUrl) =>
+  new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.min(1, 512 / Math.max(img.width, img.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(img.width * scale)
+      c.height = Math.round(img.height * scale)
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+      const small = c.toDataURL('image/jpeg', 0.75)
+      resolve({ base64: small.split(',')[1], mediaType: 'image/jpeg' })
+    }
+    img.onerror = () => resolve({ base64: dataUrl.split(',')[1], mediaType: 'image/jpeg' })
+    img.src = dataUrl
+  })
 
 // Layout Builder: cajas (bbox) sobre un canvas con o sin imagen de fondo,
 // al estilo del Prompt Builder de Ideogram 4. Cada caja lleva descripción,
@@ -22,6 +41,9 @@ const COLORS = ['#f8615a', '#60a5fa', '#4ade80', '#eab308', '#c084fc', '#fb923c'
 
 export default function LayoutBuilder({ initial, onApply, onClose, toast, ar = '16:9', settings }) {
   const [applying, setApplying] = useState(false)
+  const [building, setBuilding] = useState(false)
+  const [aiEdit, setAiEdit] = useState('')
+  const [editing, setEditing] = useState(false)
   const [boxes, setBoxes] = useState(() => (initial?.elements || []).map((el, i) => ({
     id: uid(), box: el.box, desc: el.desc || '', type: el.type || 'obj',
     text: el.text || '', palette: el.palette || [], color: COLORS[i % COLORS.length],
@@ -191,9 +213,78 @@ export default function LayoutBuilder({ initial, onApply, onClose, toast, ar = '
     }
   }
 
-  // Aplicar con IA: traduce a inglés, expande las notas del usuario a
-  // secciones bien redactadas y convierte los bboxes en lenguaje espacial
-  // (# Composition). Si no hay proveedor o falla, cae al volcado crudo.
+  // Vuelca un caption parseado {highLevel, background, elements} al estado
+  // del builder (lo usan Importar, Construir desde imagen y Editar con IA).
+  const loadParsed = (parsed, { keepText = false } = {}) => {
+    setHighLevel(parsed.highLevel)
+    setBackground(parsed.background)
+    const els = parsed.elements
+      .map((el) => ({ ...el, box: el.box || (el.bbox ? bboxToBox(el.bbox) : null) }))
+      .filter((el) => el.box)
+    setBoxes(els.map((el, i) => ({
+      id: uid(), box: el.box, desc: el.desc || '', type: el.type || 'obj',
+      text: keepText ? (el.text || '') : (el.text || ''), palette: el.palette || [],
+      color: COLORS[i % COLORS.length],
+    })))
+    setSelected(null)
+    // Paletas medidas de los recortes nuevos (si hay imagen de fondo).
+    if (bg) {
+      els.forEach((el, i) => {
+        paletteForRegion(bg, el.box).then((palette) => {
+          if (palette.length) setBoxes((prev) => prev.map((b, j) => (j === i ? { ...b, palette } : b)))
+        })
+      })
+    }
+  }
+
+  // "Construir desde imagen" (estilo Ideogram Build from image): deconstruye
+  // el fondo en high-level + background + cajas con descripciones en inglés.
+  const buildFromImage = async () => {
+    if (building || !bg) return
+    if (!isReady(settings)) return toast(providerHint(settings), 'error')
+    setBuilding(true)
+    try {
+      const image = await dataUrlToLlmImage(bg)
+      const parsed = await layoutFromImage({ settings, image })
+      if (!parsed.elements.length && !parsed.background) throw new Error('el modelo no devolvió layout')
+      loadParsed(parsed)
+      toast(`Layout construido: ${parsed.elements.length} elementos ✓`, 'ok')
+    } catch (e) {
+      toast('Error al construir: ' + e.message.slice(0, 80), 'error')
+    } finally {
+      setBuilding(false)
+    }
+  }
+
+  // "Editar escena con IA": instrucción en lenguaje natural sobre el caption.
+  const editScene = async () => {
+    const instruction = aiEdit.trim()
+    if (editing || !instruction) return
+    if (!isReady(settings)) return toast(providerHint(settings), 'error')
+    setEditing(true)
+    try {
+      const parsed = await editLayout({ settings, caption: compileCaption(), instruction })
+      loadParsed(parsed)
+      setAiEdit('')
+      toast('Escena editada ✓', 'ok')
+    } catch (e) {
+      toast('Error al editar: ' + e.message.slice(0, 80), 'error')
+    } finally {
+      setEditing(false)
+    }
+  }
+
+  // Aplicar SIN IA: volcado directo de lo que escribiste (crudo).
+  const applyRaw = () => {
+    const rawSecs = captionToSections(parseIdeogramCaption(compileCaption()))
+    if (!Object.keys(rawSecs).length) return toast('El layout está vacío', 'error')
+    onApply(rawSecs)
+    toast('Layout aplicado al prompt (sin redactar)', 'ok')
+    onClose()
+  }
+
+  // Aplicar CON IA: traduce a inglés, expande las notas y convierte los
+  // bboxes en lenguaje espacial (# Composition). Si falla, cae al crudo.
   const apply = async () => {
     if (applying) return
     const caption = compileCaption()
@@ -218,6 +309,9 @@ export default function LayoutBuilder({ initial, onApply, onClose, toast, ar = '
     onClose()
   }
 
+  // JSON vivo (estilo panel derecho del Prompt Builder de Ideogram).
+  const liveJson = JSON.stringify(compileCaption(), null, 1)
+
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal wide">
@@ -241,6 +335,14 @@ export default function LayoutBuilder({ initial, onApply, onClose, toast, ar = '
               {bg && <img className="lb-img" src={bg} alt="fondo" draggable={false} />}
               {!bg && !boxes.length && (
                 <span className="lb-hint-empty">Arrastrá para dibujar una caja<br />o subí una imagen de referencia</span>
+              )}
+              {bg && !boxes.length && !building && (
+                <button className="btn primary lb-cta" onPointerDown={(e) => e.stopPropagation()} onClick={buildFromImage}>
+                  <Sparkles className="ico" />Construir desde imagen
+                </button>
+              )}
+              {building && (
+                <span className="lb-hint-empty"><span className="spinner" /> Deconstruyendo la imagen…</span>
               )}
               {boxes.map((b, i) => {
                 const x = Math.min(b.box.x, b.box.x + b.box.w)
@@ -277,8 +379,24 @@ export default function LayoutBuilder({ initial, onApply, onClose, toast, ar = '
               <button className="btn small" onClick={addCenteredBox}><Plus className="ico" />Caja</button>
               <button className="btn small" onClick={removeSelected} disabled={!selected}><Trash2 className="ico" />Quitar</button>
               <button className="btn small" onClick={() => fileRef.current?.click()}><ImagePlus className="ico" />{bg ? 'Cambiar imagen' : 'Imagen de fondo'}</button>
+              {bg && boxes.length > 0 && (
+                <button className="btn small" onClick={buildFromImage} disabled={building} title="Reemplaza las cajas deconstruyendo la imagen con IA">
+                  {building ? <span className="spinner" /> : <Sparkles className="ico" />}Reconstruir
+                </button>
+              )}
               {bg && <button className="btn small ghost" onClick={() => setBg(null)}>Sin imagen</button>}
               <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { loadBg(e.target.files[0]); e.target.value = '' }} />
+            </div>
+            <div className="lb-ai-edit">
+              <input
+                value={aiEdit}
+                placeholder="Editar escena con IA… ej: «agregá un sol arriba a la derecha», «la moto más grande»"
+                onChange={(e) => setAiEdit(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && editScene()}
+              />
+              <button className="btn small" onClick={editScene} disabled={editing || !aiEdit.trim()}>
+                {editing ? <span className="spinner" /> : <Sparkles className="ico" />}Editar
+              </button>
             </div>
             <div className="field">
               <label>Descripción general (high-level)</label>
@@ -343,13 +461,26 @@ export default function LayoutBuilder({ initial, onApply, onClose, toast, ar = '
               </div>
             )}
           </div>
+          <div className="lb-json">
+            <div className="lb-json-head">
+              <span className="metrics-title">JSON prompt</span>
+              <button className="icon-btn" title="Copiar caption JSON" onClick={copyJson}><Copy className="ico solo" /></button>
+            </div>
+            <pre className="lb-json-pre">{liveJson}</pre>
+          </div>
         </div>
         <div className="modal-foot">
-          <span className="hint">Las cajas se compilan al caption JSON de Ideogram 4; "Aplicar" las vuelca como secciones del editor.</span>
+          <span className="hint">El JSON de la derecha es el caption de Ideogram 4, en vivo.</span>
           <div style={{ flex: 1 }} />
+          <button
+            className="btn"
+            onClick={applyRaw}
+            disabled={applying || (!boxes.length && !background && !highLevel)}
+            title="Vuelca tus textos tal cual, sin redactar"
+          >Aplicar sin IA</button>
           <button className="btn primary" onClick={apply} disabled={!boxes.length && !background && !highLevel}>
             {applying ? <span className="spinner" /> : <Send className="ico" />}
-            {applying ? 'Redactando en inglés…' : 'Aplicar al prompt →'}
+            {applying ? 'Redactando en inglés…' : 'Redactar con IA y aplicar →'}
           </button>
         </div>
       </div>
