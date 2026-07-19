@@ -7,7 +7,6 @@ import StoryboardView from './components/StoryboardView.jsx'
 import SettingsModal from './components/SettingsModal.jsx'
 import ExportModal from './components/ExportModal.jsx'
 import StyleLab from './components/StyleLab.jsx'
-import LayoutBuilder from './components/LayoutBuilder.jsx'
 import ComposeBar from './components/ComposeBar.jsx'
 import { PRESET_GROUPS } from './data/presets.js'
 
@@ -45,10 +44,9 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showStyleLab, setShowStyleLab] = useState(false)
-  // Layout Builder: cajas estilo Ideogram; builderInit trae elementos e
-  // imagen cuando se abre desde el DNA Lab (null = construir de cero).
-  const [showBuilder, setShowBuilder] = useState(false)
-  const [builderInit, setBuilderInit] = useState(null)
+  // El Layout vive DENTRO del Style DNA Lab (pestaña Réplica completa):
+  // labMode decide en qué pestaña se abre el Lab.
+  const [labMode, setLabMode] = useState('style')
   const [editMenu, setEditMenu] = useState(false)
   const [promptsMenu, setPromptsMenu] = useState(false)
   const [savedPrompts, setSavedPrompts] = usePersistedState('savedPrompts', [])
@@ -389,8 +387,8 @@ export default function App() {
             ><X className="ico" />Cancelar</button>
           )}
         </div>
-        <button className="btn" onClick={() => setShowStyleLab(true)} title="Extraer el ADN visual de una imagen"><Dna className="ico" />Style DNA</button>
-        <button className="btn" onClick={() => { setBuilderInit(null); setShowBuilder(true) }} title="Construir el prompt con cajas (bbox) al estilo Ideogram 4"><LayoutGrid className="ico" />Layout</button>
+        <button className="btn" onClick={() => { setLabMode('style'); setShowStyleLab(true) }} title="Extraer el ADN visual de una imagen"><Dna className="ico" />Style DNA</button>
+        <button className="btn" onClick={() => { setLabMode('replica'); setShowStyleLab(true) }} title="Deconstruir una imagen en zonas + prompt (estilo Prompt Builder de Ideogram)"><LayoutGrid className="ico" />Layout</button>
         <button className="btn" onClick={() => setShowCS(true)}><UserRound className="ico" />Character Studio</button>
         <button className="btn" onClick={copyPrompt} title="Copiar limpio, sin encabezados (otros formatos en Exportar)"><Copy className="ico" />Copiar</button>
         <button className="btn primary" onClick={() => setShowExport(true)} title="Compilar para Midjourney, Sora, Kling, SDXL…"><Send className="ico" />Exportar</button>
@@ -476,17 +474,7 @@ export default function App() {
           ar={exportAr}
           setAr={setExportAr}
           imageProvider={imageProvider}
-          onOpenBuilder={(init) => { setBuilderInit(init); setShowStyleLab(false); setShowBuilder(true) }}
-        />
-      )}
-      {showBuilder && (
-        <LayoutBuilder
-          initial={builderInit}
-          onApply={mergeSections}
-          onClose={() => setShowBuilder(false)}
-          toast={toast}
-          ar={exportAr}
-          settings={settings}
+          initialMode={labMode}
         />
       )}
       {showExport && (

@@ -356,6 +356,15 @@ body {
   margin: 0; overflow: auto; flex: 1; white-space: pre-wrap; word-break: break-word;
   font: 400 10.5px var(--font-mono); color: var(--text-dim); line-height: 1.5;
 }
+/* Vista JSON dentro del resultado del Lab (fusión DNA ↔ Layout) */
+.sl-view-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.sl-json {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px; background: var(--bg-panel);
+}
 /* CTA centrado sobre el canvas ("Construir desde imagen") */
 .lb-cta {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);

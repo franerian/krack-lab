@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react'
-import { Dna, Bug, X, Camera, Crosshair, Search, Printer, Copy, Bookmark, ImagePlus, Plus } from 'lucide-react'
+import { Dna, Bug, X, Camera, Crosshair, Search, Printer, Copy, Bookmark, ImagePlus, Plus, Sparkles } from 'lucide-react'
 import { generateImage } from '../lib/imageGen.js'
-import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, isReady, providerHint, cancelActive, pickDirectModel } from '../lib/anthropic.js'
+import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, layoutToSections, editLayout, isReady, providerHint, cancelActive, pickDirectModel } from '../lib/anthropic.js'
+import LayoutCanvas, { BOX_COLORS, newBoxId } from './LayoutCanvas.jsx'
 import LogViewer from './LogViewer.jsx'
 import ImageResult from './ImageResult.jsx'
 import { clipSimilarity } from '../lib/clip.js'
@@ -27,11 +28,11 @@ const modelLabel = (s) =>
 
 const MAX_REFS = 5
 
-export default function StyleLab({ settings, onApply, onReplace, onSavePreset, onClose, toast, target, setTarget, ar, setAr, imageProvider, onOpenBuilder }) {
+export default function StyleLab({ settings, onApply, onReplace, onSavePreset, onClose, toast, target, setTarget, ar, setAr, imageProvider, initialMode }) {
   // Referencias de estilo: 1 en modo réplica, hasta MAX_REFS en "solo estilo".
   // Cada item: { dataUrl, base64, mediaType, file, metrics, meta }.
   const [images, setImages] = useState([])
-  const [mode, setMode] = useState('style')
+  const [mode, setMode] = useState(initialMode || 'style')
   const [busy, setBusy] = useState(false)
   const [pass, setPass] = useState(0) // 0 idle | 'florence' | 1 extracción | 2 autocrítica
   // Ambos ON por default: un solo botón "Extraer ADN" corre todo el pipeline.
@@ -71,12 +72,23 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
 
   // Mapa espacial (modo réplica + Structured Outputs): elementos con bbox
   // y paleta local, en el schema de Ideogram.
-  const [elements, setElements] = useState([])
+  // Fusión DNA ↔ Layout: en réplica la imagen ES el canvas — las zonas
+  // (cajas) se extraen con IA y se editan encima. hld/background completan
+  // el modelo del caption de Ideogram; viewMode alterna Prompt | JSON.
+  const [boxes, setBoxes] = useState([])
+  const [selectedBox, setSelectedBox] = useState(null)
+  const [highLevel, setHighLevel] = useState('')
+  const [background, setBackground] = useState('')
+  const [viewMode, setViewMode] = useState('prompt') // 'prompt' | 'json'
+  const [aiEdit, setAiEdit] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
   // Al cambiar el set de referencias, se invalida el análisis previo.
   const resetAnalysis = () => {
     setResult(null); setGrounding(null); setGenImg(null)
-    setClipScore(null); setVersion(1); setHistory([]); setElements([])
+    setClipScore(null); setVersion(1); setHistory([])
+    setBoxes([]); setSelectedBox(null); setHighLevel(''); setBackground('')
   }
 
   // Carga y mide una o varias imágenes. En réplica reemplaza (una sola);
@@ -144,16 +156,18 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
       let r = await analyzeImageStyle({ settings, images: imgPayload, mode, measurements })
       passes.push(r.trace)
       let sections = r.sections
-      // Mapa espacial: bbox → fracciones + paleta local medida del crop.
+      // Zonas del layout: bbox → cajas editables sobre el canvas, con la
+      // paleta local medida de cada recorte.
       if (r.elements?.length) {
-        const els = await Promise.all(r.elements.map(async (e) => {
+        const els = await Promise.all(r.elements.map(async (e, i) => {
           const box = bboxToBox(e.bbox)
           const palette = await paletteForRegion(primary.dataUrl, box)
-          return { desc: e.desc, box, palette, type: 'obj' }
+          return { id: newBoxId(), desc: e.desc, box, palette, type: 'obj', text: '', color: BOX_COLORS[i % BOX_COLORS.length] }
         }))
-        setElements(els)
+        setBoxes(els)
+        setSelectedBox(null)
       } else {
-        setElements([])
+        setBoxes([])
       }
       if (verify) {
         setPass(2)
@@ -163,6 +177,13 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
         sections = r.sections
       }
       setResult(sections)
+      // La réplica completa también puebla la descripción general y el fondo
+      // (el modelo del caption de Ideogram) desde las secciones extraídas.
+      if (mode === 'replica') {
+        const S = (n) => sections.find((s) => s.name === n)?.text || ''
+        setHighLevel(S('Subject'))
+        setBackground(S('Environment'))
+      }
       logRun({ passes, measurements, final: sections })
       toast(verify ? 'ADN extraído y verificado ✓' : 'ADN visual extraído ✓', 'ok')
     } catch (e) {
@@ -171,6 +192,62 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     } finally {
       setBusy(false)
       setPass(0)
+    }
+  }
+
+  // Caption de Ideogram en vivo (secciones + zonas + hld/fondo).
+  const compileCaption = () =>
+    buildIdeogramCaption({
+      sections: result || [],
+      elements: boxes.map((b) => ({ box: b.box, desc: b.desc, type: b.type, text: b.text, palette: b.palette })),
+      background,
+      highLevel,
+    })
+
+  // "Editar escena con IA": instrucción natural → caption editado → cajas.
+  const editScene = async () => {
+    const instruction = aiEdit.trim()
+    if (editing || !instruction) return
+    if (!isReady(settings)) return toast(providerHint(settings), 'error')
+    setEditing(true)
+    try {
+      const parsed = await editLayout({ settings, caption: compileCaption(), instruction })
+      setHighLevel(parsed.highLevel)
+      setBackground(parsed.background)
+      const els = parsed.elements.map((el, i) => ({
+        id: newBoxId(), box: bboxToBox(el.bbox), desc: el.desc, type: el.type,
+        text: el.text, palette: [], color: BOX_COLORS[i % BOX_COLORS.length],
+      }))
+      setBoxes(els)
+      setSelectedBox(null)
+      els.forEach((el) => {
+        paletteForRegion(primary.dataUrl, el.box).then((palette) => {
+          if (palette.length) setBoxes((prev) => prev.map((b) => (b.id === el.id ? { ...b, palette } : b)))
+        })
+      })
+      setAiEdit('')
+      toast('Escena editada ✓', 'ok')
+    } catch (e) {
+      toast('Error al editar: ' + e.message.slice(0, 80), 'error')
+    } finally {
+      setEditing(false)
+    }
+  }
+
+  // Redacta el prompt (secciones) desde el layout editado: las zonas se
+  // traducen a lenguaje espacial adaptable a cualquier modelo destino.
+  const syncFromLayout = async () => {
+    if (syncing) return
+    if (!isReady(settings)) return toast(providerHint(settings), 'error')
+    setSyncing(true)
+    try {
+      const { sections } = await layoutToSections({ settings, caption: compileCaption() })
+      setResult(sections)
+      toast('Prompt redactado desde el layout ✓', 'ok')
+    } catch (e) {
+      toast('Error al redactar: ' + e.message.slice(0, 80), 'error')
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -334,7 +411,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
           <div className="tabs">
             <button
               className={'tab' + (mode === 'style' ? ' active' : '')}
-              onClick={() => { setMode('style'); setResult(null) }}
+              onClick={() => { setMode('style'); setResult(null); setBoxes([]); setSelectedBox(null) }}
               title="Solo el tratamiento visual, transferible a cualquier escena. Podés combinar varias imágenes de referencia."
             >Solo estilo (ADN)</button>
             <button
@@ -373,6 +450,39 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                   {mode === 'style' && <><br /><span className="sl-drop-sub">podés combinar varias — se extrae el estilo común</span></>}
                 </span>
               </div>
+            ) : mode === 'replica' ? (
+              <>
+                {/* Fusión DNA ↔ Layout: la imagen ES el canvas; las zonas
+                    extraídas/dibujadas viven encima y devienen prompt. */}
+                <LayoutCanvas
+                  bg={primary.dataUrl}
+                  ratio={metrics ? metrics.width / metrics.height : 16 / 9}
+                  boxes={boxes}
+                  setBoxes={setBoxes}
+                  selected={selectedBox}
+                  setSelected={setSelectedBox}
+                />
+                <div className="lb-ai-edit">
+                  <input
+                    value={aiEdit}
+                    placeholder="Editar escena con IA… ej: «agregá un sol arriba a la derecha»"
+                    onChange={(e) => setAiEdit(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && editScene()}
+                  />
+                  <button className="btn small" onClick={editScene} disabled={editing || !aiEdit.trim()}>
+                    {editing ? <span className="spinner" /> : <Sparkles className="ico" />}Editar
+                  </button>
+                  <button className="icon-btn danger" title="Quitar la imagen" onClick={() => removeImage(0)}><X className="ico solo" /></button>
+                </div>
+                <div className="field">
+                  <label>Descripción general (high-level)</label>
+                  <textarea rows={2} value={highLevel} placeholder="Una oración que resume la imagen completa…" onChange={(e) => setHighLevel(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label>Fondo / entorno (background)</label>
+                  <textarea rows={2} value={background} placeholder="Solo paredes, piso, luz y entorno — los objetos van en zonas…" onChange={(e) => setBackground(e.target.value)} />
+                </div>
+              </>
             ) : (
               <div className="ref-strip">
                 {images.map((im, i) => (
@@ -382,7 +492,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                     <button className="ref-remove" title="Quitar" onClick={() => removeImage(i)}><X className="ico solo" /></button>
                   </div>
                 ))}
-                {mode === 'style' && images.length < MAX_REFS && (
+                {images.length < MAX_REFS && (
                   <button
                     className={'ref-add' + (drag ? ' dragover' : '')}
                     onClick={() => addRef.current?.click()}
@@ -440,61 +550,6 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                     <Crosshair className="ico" />¡Prompt original embebido detectado! ({meta.source}) — se usará como fuente principal
                   </div>
                 )}
-              </div>
-            )}
-            {elements.length > 0 && primary && (
-              <div className="metrics-panel">
-                <div className="metrics-title">
-                  Mapa de elementos <span className="metrics-sub">· {elements.length} detectados</span>
-                </div>
-                <div className="elements-map">
-                  <img src={primary.dataUrl} alt="mapa" />
-                  {elements.map((el, i) => (
-                    <div
-                      key={i}
-                      className="el-box"
-                      title={el.desc}
-                      style={{
-                        left: `${el.box.x * 100}%`, top: `${el.box.y * 100}%`,
-                        width: `${el.box.w * 100}%`, height: `${el.box.h * 100}%`,
-                      }}
-                    ><span className="el-num">{String(i + 1).padStart(2, '0')}</span></div>
-                  ))}
-                </div>
-                <div className="el-list">
-                  {elements.map((el, i) => (
-                    <div key={i} className="el-row" title={el.desc}>
-                      <span className="el-num-badge">{String(i + 1).padStart(2, '0')}</span>
-                      <span className="el-desc">{el.desc}</span>
-                      <span className="el-palette">
-                        {el.palette.map((h) => <span key={h} className="accent-chip" style={{ background: h }} title={h} />)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <button
-                    className="btn small"
-                    onClick={() => {
-                      const cap = buildIdeogramCaption({ sections: result || [], elements })
-                      navigator.clipboard.writeText(JSON.stringify(cap, null, 1))
-                      toast('Caption JSON de Ideogram copiado (con bboxes y paletas)', 'ok')
-                    }}
-                  ><Copy className="ico" />Copiar JSON Ideogram</button>
-                  {onOpenBuilder && (
-                    <button
-                      className="btn small"
-                      title="Ajustar las cajas y descripciones en el Layout Builder"
-                      onClick={() => {
-                        const S = (n) => (result || []).find((s) => s.name === n)?.text || ''
-                        onOpenBuilder({
-                          elements, image: primary.dataUrl, sections: result || [],
-                          background: S('Environment'), highLevel: S('Subject'),
-                        })
-                      }}
-                    ><Plus className="ico" />Abrir en Layout Builder</button>
-                  )}
-                </div>
               </div>
             )}
             <button className="btn primary" style={{ width: '100%' }} onClick={analyze} disabled={busy || !images.length}>
@@ -636,7 +691,36 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
             </p>
           </div>
           <div className="sl-right">
-            {result ? (
+            {mode === 'replica' && (result || boxes.length > 0) && (
+              <div className="sl-view-bar">
+                <div className="tabs">
+                  <button className={'tab' + (viewMode === 'prompt' ? ' active' : '')} onClick={() => setViewMode('prompt')}>Prompt</button>
+                  <button className={'tab' + (viewMode === 'json' ? ' active' : '')} onClick={() => setViewMode('json')}>JSON Ideogram</button>
+                </div>
+                {viewMode === 'prompt' && boxes.length > 0 && (
+                  <button
+                    className="btn small"
+                    onClick={syncFromLayout}
+                    disabled={syncing}
+                    title="Redacta las secciones desde el layout editado — las zonas se traducen a lenguaje espacial"
+                  >
+                    {syncing ? <span className="spinner" /> : <Sparkles className="ico" />}Redactar desde layout
+                  </button>
+                )}
+                {viewMode === 'json' && (
+                  <button
+                    className="btn small"
+                    onClick={() => {
+                      navigator.clipboard.writeText(JSON.stringify(compileCaption(), null, 1))
+                      toast('Caption JSON de Ideogram copiado', 'ok')
+                    }}
+                  ><Copy className="ico" />Copiar</button>
+                )}
+              </div>
+            )}
+            {mode === 'replica' && viewMode === 'json' ? (
+              <pre className="lb-json-pre sl-json">{JSON.stringify(compileCaption(), null, 1)}</pre>
+            ) : result ? (
               result.map((s) => (
                 <div key={s.name} className="sl-section">
                   <div className="section-name"><span className="hash">#</span>{s.name}</div>

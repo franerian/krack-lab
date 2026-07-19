@@ -380,8 +380,39 @@ const CAPTION_SCHEMA = {
 
 const BBOX_RULES = 'bbox = [ymin, xmin, ymax, xmax] on a 0-1000 grid, origin top-left, tight around the object. background describes ONLY walls/ground/sky/light — every object goes in elements. All text in English.'
 
-const parseCaptionJson = (raw) => {
-  const obj = JSON.parse(raw)
+// Rescata el objeto JSON aunque el modelo lo envuelva en razonamiento o
+// fences ("The user wants… { … }"): fences primero, después el bloque entre
+// el primer "{" y el último "}".
+const extractJson = (raw) => {
+  const s = (raw || '').trim()
+  try { return JSON.parse(s) } catch { /* sigue */ }
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (fence) { try { return JSON.parse(fence[1]) } catch { /* sigue */ } }
+  const start = s.indexOf('{')
+  const end = s.lastIndexOf('}')
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(s.slice(start, end + 1)) } catch { /* sigue */ }
+  }
+  throw new Error('el modelo no devolvió JSON (respondió texto libre) — probá de nuevo o cambiá de modelo en Ajustes')
+}
+
+// Llamada que DEBE devolver un caption JSON: extrae el JSON del ruido y, si
+// no aparece, reintenta UNA vez con recordatorio (proveedores sin Structured
+// Outputs efectivos, ej. algunos modelos de Pollinations).
+const callForCaption = async (settings, req) => {
+  let raw = await callLLM(settings, { ...req, responseSchema: CAPTION_SCHEMA })
+  try {
+    return extractJson(raw)
+  } catch {
+    raw = await callLLM(settings, {
+      ...req,
+      user: req.user + '\n\nIMPORTANT: your previous reply was not valid JSON. Respond ONLY with the JSON object — no commentary, no reasoning, no fences.',
+    })
+    return extractJson(raw)
+  }
+}
+
+const parseCaptionJson = (obj) => {
   const elements = (obj.elements || [])
     .filter((e) => Array.isArray(e.bbox) && e.bbox.length === 4 && e.desc)
     .map((e) => ({
