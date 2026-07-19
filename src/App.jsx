@@ -486,6 +486,7 @@ export default function App() {
           onClose={() => setShowBuilder(false)}
           toast={toast}
           ar={exportAr}
+          settings={settings}
         />
       )}
       {showExport && (

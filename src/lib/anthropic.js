@@ -86,9 +86,10 @@ const jsonToSections = (obj) => {
     .map((k) => ({ name: k, text: obj[k].trim() }))
 }
 
-// Proveedores donde tiene sentido usar Structured Outputs de forma nativa
-// (mismo formato OpenAI, response_format json_schema soportado).
-const supportsStructured = (settings) => settings.provider === 'fireworks'
+// Los 4 proveedores tienen Structured Outputs: Fireworks/Pollinations vía
+// response_format (OpenAI), Gemini vía responseSchema, Ollama vía format.
+// Si un modelo puntual lo ignora, callParsed cae al parseo por texto.
+const supportsStructured = () => true
 
 async function callParsed(settings, req) {
   const useSchema = req.schema && supportsStructured(settings)
@@ -297,9 +298,9 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
       ? 'Extract the Style DNA of this image. Style only — the content will be replaced by other scenes.'
       : 'Deconstruct this image into a full replication prompt, Style DNA first.'
   // Mapa espacial: en modo réplica (una imagen, layout definido) se piden
-  // también los elementos con bbox — solo donde hay Structured Outputs que
-  // garanticen el formato (hoy Fireworks).
-  const wantElements = mode === 'replica' && !multi && settings.provider === 'fireworks'
+  // también los elementos con bbox. Todos los proveedores tienen Structured
+  // Outputs; si el modelo ignora el campo, elements queda vacío sin romper.
+  const wantElements = mode === 'replica' && !multi
   let system = DNA_SYSTEM(mode)
   if (wantElements) {
     system += `\n\nSPATIAL MAP: additionally output "Elements" — the 2 to 6 most important distinct visual objects in the image. Each element: a short desc (what it is, its condition) and a TIGHT bbox as [ymin, xmin, ymax, xmax] on a 0-1000 grid (origin at top-left; 1000 = full height/width). Do not include the background as an element.`
@@ -348,6 +349,31 @@ PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference �
   const trace = { pass: 'refine', system, user, raw, retried }
   if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
   return { sections, trace }
+}
+
+// Layout Builder → prompt: convierte el caption espacial (descripciones del
+// usuario en cualquier idioma + bboxes + paletas) en secciones bien
+// redactadas EN INGLÉS. Los bboxes se traducen a lenguaje espacial en
+// # Composition — así cualquier generador (no solo Ideogram) recibe el
+// layout como palabras.
+export async function layoutToSections({ settings: rawSettings, caption }) {
+  const { settings } = pickDirectModel(rawSettings, { needsVision: false })
+  const system = `You are a master prompt engineer. You receive an Ideogram-style layout caption as JSON: a high-level description, a background, and elements each with an optional bbox on a 0-1000 grid ([ymin, xmin, ymax, xmax], origin top-left) and an optional color palette.
+
+Write a complete structured generation prompt IN ENGLISH (translate any non-English text):
+- # Subject: the elements, each described richly (expand terse user notes into vivid, concrete wording — never invent objects that are not listed).
+- # Composition: MANDATORY — convert each element's bbox into spatial language: position in the frame (e.g. "low center", "upper right third"), relative size (a bbox covering >60% of an axis is "dominant", <25% is "small"), and overlaps/relationships between elements. Also state the negative space.
+- # Environment: the background description, enriched.
+- # Color: name every palette color evocatively with its hex in parentheses, e.g. "burnt sienna (#502915)".
+- # Style / # Lighting / # Mood: derive from the descriptions if implied; otherwise write a coherent minimal choice that serves the scene.
+Keep each section to max 2 sentences. No preamble — output only the sections.`
+  const user = `LAYOUT CAPTION (JSON):\n${JSON.stringify(caption)}`
+  const { raw, parsed, retried } = await callParsed(settings, {
+    system, user, maxTokens: 1200, schema: sectionsSchema('replica'),
+  })
+  const trace = { pass: 'layout', system, user, raw, retried }
+  if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
+  return { sections: parsed, trace }
 }
 
 export async function critiqueStyleDNA({ settings: rawSettings, image, images, draft, mode = 'style', measurements = '' }) {

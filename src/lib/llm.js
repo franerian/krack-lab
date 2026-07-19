@@ -151,7 +151,7 @@ export async function listPollinationsModels(token) {
   }
 }
 
-export async function callPollinations({ token, model, system, user, maxTokens = 2000, image, images }) {
+export async function callPollinations({ token, model, system, user, maxTokens = 2000, image, images, responseSchema }) {
   if (!token) throw new Error('NO_POLLINATIONS_KEY')
   const imgs = images || (image ? [image] : null)
   const content = imgs
@@ -179,6 +179,14 @@ export async function callPollinations({ token, model, system, user, maxTokens =
             { role: 'system', content: system },
             { role: 'user', content },
           ],
+          // Passthrough OpenAI: los modelos que lo soporten fuerzan el JSON;
+          // los que no, lo ignoran y callParsed cae al parseo por texto.
+          ...(responseSchema ? {
+            response_format: {
+              type: 'json_schema',
+              json_schema: { name: 'krack_sections', schema: responseSchema },
+            },
+          } : {}),
         }),
       })
       if (!res.ok) {
@@ -293,7 +301,7 @@ export async function callFireworks({ token, model, system, user, maxTokens = 20
   }, 'No se pudo conectar con Fireworks (red o servicio caído). Reintentá en unos segundos.')
 }
 
-export async function callOllama({ url, model, system, user, maxTokens = 2000, image, images }) {
+export async function callOllama({ url, model, system, user, maxTokens = 2000, image, images, responseSchema }) {
   if (!model) throw new Error('NO_OLLAMA_MODEL')
   const base = (url || OLLAMA_DEFAULT_URL).replace(/\/$/, '')
   const userMsg = { role: 'user', content: user }
@@ -313,6 +321,9 @@ export async function callOllama({ url, model, system, user, maxTokens = 2000, i
           // el presupuesto pensando y truncaban la salida a mitad de frase.
           // Los modelos sin thinking ignoran el parámetro (verificado).
           think: false,
+          // Structured Outputs de Ollama (≥0.5): `format` acepta un JSON
+          // schema y fuerza la salida a cumplirlo.
+          ...(responseSchema ? { format: responseSchema } : {}),
           messages: [
             { role: 'system', content: system },
             userMsg,
@@ -340,7 +351,20 @@ export async function callOllama({ url, model, system, user, maxTokens = 2000, i
   }, `No se pudo conectar con Ollama en ${base}. Verificá que esté corriendo (ollama serve) y que el origen esté permitido — o cambiá a Demo (Gemini) en Ajustes.`)
 }
 
-export async function callGemini({ apiKey, model, system, user, maxTokens = 2000, image, images }) {
+// Gemini soporta responseSchema (OpenAPI subset) pero rechaza claves como
+// additionalProperties — se limpian recursivamente antes de mandar.
+const sanitizeForGemini = (schema) => {
+  if (Array.isArray(schema)) return schema.map(sanitizeForGemini)
+  if (!schema || typeof schema !== 'object') return schema
+  const out = {}
+  for (const [k, v] of Object.entries(schema)) {
+    if (k === 'additionalProperties') continue
+    out[k] = sanitizeForGemini(v)
+  }
+  return out
+}
+
+export async function callGemini({ apiKey, model, system, user, maxTokens = 2000, image, images, responseSchema }) {
   const key = apiKey || DEMO_GEMINI_KEY
   const m = model || 'gemini-2.5-flash'
   const imgs = images || (image ? [image] : null)
@@ -365,6 +389,11 @@ export async function callGemini({ apiKey, model, system, user, maxTokens = 2000
             // Gemini 2.5 razona por defecto y el thinking consume el
             // presupuesto de salida (verificado: truncaba). Se apaga.
             thinkingConfig: { thinkingBudget: 0 },
+            // Structured Outputs nativos de Gemini.
+            ...(responseSchema ? {
+              responseMimeType: 'application/json',
+              responseSchema: sanitizeForGemini(responseSchema),
+            } : {}),
           },
         }),
       })
@@ -412,7 +441,7 @@ export async function listOllamaModels(url) {
 export function callLLM(settings, { system, user, maxTokens, image, images, responseSchema }) {
   if (settings.provider === 'ollama') {
     return callOllama({
-      url: settings.ollamaUrl, model: settings.ollamaModel, system, user, maxTokens, image, images,
+      url: settings.ollamaUrl, model: settings.ollamaModel, system, user, maxTokens, image, images, responseSchema,
     })
   }
   if (settings.provider === 'pollinations') {
@@ -422,7 +451,7 @@ export function callLLM(settings, { system, user, maxTokens, image, images, resp
       return Promise.reject(new Error('El modelo de Pollinations elegido no tiene visión — elegí uno con "visión" en Ajustes (requiere key de enter.pollinations.ai) o usá el modo Demo (Gemini)'))
     }
     return callPollinations({
-      token: settings.pollinationsToken, model: settings.pollinationsModel, system, user, maxTokens, image, images,
+      token: settings.pollinationsToken, model: settings.pollinationsModel, system, user, maxTokens, image, images, responseSchema,
     })
   }
   if (settings.provider === 'fireworks') {
@@ -438,7 +467,7 @@ export function callLLM(settings, { system, user, maxTokens, image, images, resp
   }
   // Default: Gemini (modo demo con key gratuita embebida, o la del usuario).
   return callGemini({
-    apiKey: settings.geminiKey, model: settings.geminiModel, system, user, maxTokens, image, images,
+    apiKey: settings.geminiKey, model: settings.geminiModel, system, user, maxTokens, image, images, responseSchema,
   })
 }
 

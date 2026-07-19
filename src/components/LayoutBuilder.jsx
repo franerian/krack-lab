@@ -3,6 +3,7 @@ import { LayoutGrid, X, Copy, Plus, Trash2, ImagePlus, ClipboardPaste, Send } fr
 import { buildIdeogramCaption, parseIdeogramCaption, captionToSections } from '../lib/ideogram.js'
 import { paletteForRegion } from '../lib/imageAnalysis.js'
 import { fileToImage } from '../lib/image.js'
+import { layoutToSections, isReady } from '../lib/anthropic.js'
 
 // Layout Builder: cajas (bbox) sobre un canvas con o sin imagen de fondo,
 // al estilo del Prompt Builder de Ideogram 4. Cada caja lleva descripción,
@@ -19,7 +20,8 @@ const MIN_SIZE = 0.02
 
 const COLORS = ['#f8615a', '#60a5fa', '#4ade80', '#eab308', '#c084fc', '#fb923c', '#52b5d9', '#f472b6']
 
-export default function LayoutBuilder({ initial, onApply, onClose, toast, ar = '16:9' }) {
+export default function LayoutBuilder({ initial, onApply, onClose, toast, ar = '16:9', settings }) {
+  const [applying, setApplying] = useState(false)
   const [boxes, setBoxes] = useState(() => (initial?.elements || []).map((el, i) => ({
     id: uid(), box: el.box, desc: el.desc || '', type: el.type || 'obj',
     text: el.text || '', palette: el.palette || [], color: COLORS[i % COLORS.length],
@@ -189,11 +191,30 @@ export default function LayoutBuilder({ initial, onApply, onClose, toast, ar = '
     }
   }
 
-  const apply = () => {
-    const secs = captionToSections(parseIdeogramCaption(compileCaption()))
-    if (!Object.keys(secs).length) return toast('El layout está vacío', 'error')
-    onApply(secs)
-    toast('Layout aplicado al prompt', 'ok')
+  // Aplicar con IA: traduce a inglés, expande las notas del usuario a
+  // secciones bien redactadas y convierte los bboxes en lenguaje espacial
+  // (# Composition). Si no hay proveedor o falla, cae al volcado crudo.
+  const apply = async () => {
+    if (applying) return
+    const caption = compileCaption()
+    const rawSecs = captionToSections(parseIdeogramCaption(caption))
+    if (!Object.keys(rawSecs).length) return toast('El layout está vacío', 'error')
+    if (isReady(settings)) {
+      setApplying(true)
+      try {
+        const { sections } = await layoutToSections({ settings, caption })
+        onApply(Object.fromEntries(sections.map((s) => [s.name, s.text])))
+        toast('Layout redactado en inglés y aplicado ✓', 'ok')
+        onClose()
+        return
+      } catch (e) {
+        toast('IA no disponible (' + e.message.slice(0, 60) + ') — aplicado sin redactar', 'error')
+      } finally {
+        setApplying(false)
+      }
+    }
+    onApply(rawSecs)
+    toast('Layout aplicado al prompt (crudo)', 'ok')
     onClose()
   }
 
@@ -327,7 +348,8 @@ export default function LayoutBuilder({ initial, onApply, onClose, toast, ar = '
           <span className="hint">Las cajas se compilan al caption JSON de Ideogram 4; "Aplicar" las vuelca como secciones del editor.</span>
           <div style={{ flex: 1 }} />
           <button className="btn primary" onClick={apply} disabled={!boxes.length && !background && !highLevel}>
-            <Send className="ico" />Aplicar al prompt →
+            {applying ? <span className="spinner" /> : <Send className="ico" />}
+            {applying ? 'Redactando en inglés…' : 'Aplicar al prompt →'}
           </button>
         </div>
       </div>
