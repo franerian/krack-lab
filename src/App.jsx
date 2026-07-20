@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Undo2, Redo2, Trash2, Folder, Save, X, Dna, UserRound, Copy, Send, Sun, Moon, Settings, Sparkles, SlidersHorizontal, LayoutGrid } from 'lucide-react'
+import { Undo2, Redo2, Trash2, Folder, Save, X, Dna, UserRound, Copy, Send, Sun, Moon, Settings, Sparkles, SlidersHorizontal } from 'lucide-react'
 import Editor from './components/Editor.jsx'
 import PresetSidebar from './components/PresetSidebar.jsx'
 import CharacterStudio from './components/CharacterStudio.jsx'
@@ -44,9 +44,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showStyleLab, setShowStyleLab] = useState(false)
-  // El Layout vive DENTRO del Style DNA Lab (pestaña Réplica completa):
-  // labMode decide en qué pestaña se abre el Lab.
-  const [labMode, setLabMode] = useState('style')
+
   const [editMenu, setEditMenu] = useState(false)
   const [promptsMenu, setPromptsMenu] = useState(false)
   const [savedPrompts, setSavedPrompts] = usePersistedState('savedPrompts', [])
@@ -387,8 +385,7 @@ export default function App() {
             ><X className="ico" />Cancelar</button>
           )}
         </div>
-        <button className="btn" onClick={() => { setLabMode('style'); setShowStyleLab(true) }} title="Extraer el ADN visual de una imagen"><Dna className="ico" />Style DNA</button>
-        <button className="btn" onClick={() => { setLabMode('replica'); setShowStyleLab(true) }} title="Deconstruir una imagen en zonas + prompt (estilo Prompt Builder de Ideogram)"><LayoutGrid className="ico" />Layout</button>
+        <button className="btn" onClick={() => setShowStyleLab(true)} title="Extraer el ADN visual de una imagen"><Dna className="ico" />Style DNA</button>
         <button className="btn" onClick={() => setShowCS(true)}><UserRound className="ico" />Character Studio</button>
         <button className="btn" onClick={copyPrompt} title="Copiar limpio, sin encabezados (otros formatos en Exportar)"><Copy className="ico" />Copiar</button>
         <button className="btn primary" onClick={() => setShowExport(true)} title="Compilar para Midjourney, Sora, Kling, SDXL…"><Send className="ico" />Exportar</button>
@@ -474,7 +471,6 @@ export default function App() {
           ar={exportAr}
           setAr={setExportAr}
           imageProvider={imageProvider}
-          initialMode={labMode}
         />
       )}
       {showExport && (

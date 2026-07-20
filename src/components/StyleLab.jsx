@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { Dna, Bug, X, Camera, Crosshair, Search, Printer, Copy, Bookmark, ImagePlus, Plus, Sparkles } from 'lucide-react'
 import { generateImage } from '../lib/imageGen.js'
-import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, layoutToSections, editLayout, isReady, providerHint, cancelActive, pickDirectModel } from '../lib/anthropic.js'
+import { analyzeImageStyle, critiqueStyleDNA, refineFromComparison, layoutToSections, editLayout, polishForTarget, isReady, providerHint, cancelActive, pickDirectModel } from '../lib/anthropic.js'
 import LayoutCanvas, { BOX_COLORS, newBoxId } from './LayoutCanvas.jsx'
 import LogViewer from './LogViewer.jsx'
 import ImageResult from './ImageResult.jsx'
@@ -396,6 +396,27 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     toast(`ADN copiado en formato ${currentTarget.label}`, 'ok')
   }
 
+  // Pulir para el modelo destino y copiar: aplica las reglas DOCUMENTADAS
+  // de la plataforma (target.notes) al compilado — el prompt que sale del
+  // Lab queda a la altura de la guía oficial de cada modelo.
+  const [polishing, setPolishing] = useState(false)
+  const polishAndCopy = async () => {
+    if (polishing) return
+    if (!isReady(settings)) return toast(providerHint(settings), 'error')
+    const compiled = currentTarget.compile(result, { ar })
+    if (!compiled) return toast('No hay nada para pulir', 'error')
+    setPolishing(true)
+    try {
+      const { polished } = await polishForTarget({ settings, target: currentTarget, compiled })
+      navigator.clipboard.writeText(polished)
+      toast(`Prompt pulido según las reglas de ${currentTarget.label} y copiado ✓`, 'ok')
+    } catch (e) {
+      toast('Error al pulir: ' + e.message.slice(0, 80), 'error')
+    } finally {
+      setPolishing(false)
+    }
+  }
+
   const save = () => {
     const name = window.prompt('Nombre para este ADN de estilo:', 'Estilo extraído')
     if (!name) return
@@ -434,7 +455,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
             toast={toast}
           />
         )}
-        <div className="modal-body sl-body">
+        <div className={'modal-body sl-body' + (mode === 'replica' ? ' replica' : '')}>
           <div className="sl-left">
             {images.length === 0 ? (
               <div
@@ -754,6 +775,15 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                 </select>
               )}
               <button className="btn" onClick={copyCompiled}><Copy className="ico" />Copiar</button>
+              {currentTarget.id !== 'structured' && currentTarget.id !== 'plain' && currentTarget.id !== 'ideogram' && (
+                <button
+                  className="btn"
+                  onClick={polishAndCopy}
+                  title={`Redacta el prompt según la guía oficial de ${currentTarget.label} (una llamada de IA) y lo copia`}
+                >
+                  {polishing ? <span className="spinner" /> : <Sparkles className="ico" />}Pulir y copiar
+                </button>
+              )}
             </>
           )}
           <button className="btn" onClick={save} disabled={!result}><Bookmark className="ico" />Guardar como preset</button>

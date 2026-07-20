@@ -454,6 +454,59 @@ export async function editLayout({ settings: rawSettings, caption, instruction }
   return parseCaptionJson(raw)
 }
 
+// ── Pulido por plataforma (compartido por Exportar y el DNA Lab) ──
+// Convierte el compilado mecánico en UN prompt fluido nativo del modelo
+// destino, siguiendo SUS reglas documentadas (target.notes). El formato que
+// demostró funcionar es el "prompt dorado": medio primero, cada dato dicho
+// una vez, colores nombrados, ~120-160 palabras.
+const POLISH_SYSTEM = (target) => `Output ONLY the final rewritten prompt. NO preamble, NO analysis, NO planning, NO "Let me…", NO word counting, NO markdown fences, NO commentary before OR after. If you output anything other than the prompt itself, the response is wrong.
+
+You are a senior prompt engineer writing the FINAL prompt for the platform "${target.label}".
+
+PLATFORM RULES (follow them exactly): ${target.notes}
+
+Rewrite the compiled prompt the user gives you as ONE flowing, production-ready prompt in that platform's native style:
+- Lead with the visual medium/style if the content defines one.
+- Keep EVERY concrete detail: objects and their condition, each light source with its emitter, colors by NAME (never hex codes), edge/focus behavior, mood.
+- Say each thing exactly ONCE — remove all redundancy.
+- 120-160 words unless the platform rules say otherwise.
+- If the input ends with parameters (--ar, --no …) or a "Negative prompt:" block, keep them verbatim at the end.
+- English.
+
+Reminder: your entire response is JUST the prompt. Start with the first word of the prompt.`
+
+// Rescate anti-razonadores: si el modelo igual antepone pensamiento, nos
+// quedamos con el prompt final (último marcador o último párrafo largo).
+export const extractFinalPrompt = (raw) => {
+  let s = raw.trim().replace(/^```[a-z]*\n?|```$/g, '').trim()
+  const marker = /(?:^|\n)\s*(?:Final|Polished|Rewritten|Output|Result|Prompt|Draft)\s*(?:prompt)?\s*:\s*\n+/i
+  const matches = [...s.matchAll(new RegExp(marker.source, marker.flags + 'g'))]
+  if (matches.length) {
+    const last = matches[matches.length - 1]
+    s = s.slice(last.index + last[0].length).trim()
+  }
+  if (/^(the user|i need|i should|let me|okay|first,|now,)/i.test(s)) {
+    const paragraphs = s.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+    const promptLike = paragraphs.reverse().find(
+      (p) => p.length > 200 && !/^\d+\./.test(p) && !/^[A-Z][a-z]+:/.test(p)
+    )
+    if (promptLike) s = promptLike
+  }
+  return s.replace(/^```[a-z]*\n?|```$/g, '').trim()
+}
+
+export async function polishForTarget({ settings, target, compiled }) {
+  const { settings: s, override } = pickDirectModel(settings)
+  const out = await callLLM(s, {
+    system: POLISH_SYSTEM(target),
+    user: `COMPILED PROMPT TO POLISH:\n\n${compiled}`,
+    maxTokens: 3000,
+  })
+  const clean = extractFinalPrompt(out)
+  if (!clean) throw new Error('respuesta vacía')
+  return { polished: clean, override }
+}
+
 // Layout Builder → prompt: convierte el caption espacial (descripciones del
 // usuario en cualquier idioma + bboxes + paletas) en secciones bien
 // redactadas EN INGLÉS. Los bboxes se traducen a lenguaje espacial en

@@ -1,60 +1,9 @@
 import React, { useMemo, useState } from 'react'
 import { Send, X, Sparkles, Copy, ImagePlus } from 'lucide-react'
 import { TARGETS, EXPORT_ASPECT_RATIOS } from '../data/targets.js'
-import { callLLM, isReady, providerHint, cancelActive, pickDirectModel } from '../lib/anthropic.js'
+import { isReady, providerHint, cancelActive, polishForTarget } from '../lib/anthropic.js'
 import { generateImage, IMAGE_PROVIDERS } from '../lib/imageGen.js'
 import ImageResult from './ImageResult.jsx'
-
-// Pulido con IA: convierte el compilado mecánico (secciones concatenadas)
-// en UN prompt fluido nativo de la plataforma — el formato que demostró
-// funcionar es el "prompt dorado" escrito a mano: medio primero, cada dato
-// dicho una vez, colores nombrados, ~120-160 palabras.
-const POLISH_SYSTEM = (target) => `Output ONLY the final rewritten prompt. NO preamble, NO analysis, NO planning, NO "Let me…", NO word counting, NO markdown fences, NO commentary before OR after. If you output anything other than the prompt itself, the response is wrong.
-
-You are a senior prompt engineer writing the FINAL prompt for the platform "${target.label}".
-
-PLATFORM RULES (follow them exactly): ${target.notes}
-
-Rewrite the compiled prompt the user gives you as ONE flowing, production-ready prompt in that platform's native style:
-- Lead with the visual medium/style if the content defines one.
-- Keep EVERY concrete detail: objects and their condition, each light source with its emitter, colors by NAME (never hex codes), edge/focus behavior, mood.
-- Say each thing exactly ONCE — remove all redundancy.
-- 120-160 words unless the platform rules say otherwise.
-- If the input ends with parameters (--ar, --no …) or a "Negative prompt:" block, keep them verbatim at the end.
-- English.
-
-Reminder: your entire response is JUST the prompt. Start with the first word of the prompt.`
-
-// Los modelos razonadores (Kimi K2.7, DeepSeek…) tienden a "pensar en voz alta"
-// dentro del content (no en reasoning_content) — descartamos ese preámbulo y
-// nos quedamos con el prompt final. Señales: "Draft:", "Final prompt:", el
-// último bloque tras una línea en blanco, o simplemente todo si no hay señal.
-const extractFinalPrompt = (raw) => {
-  let s = raw.trim().replace(/^```[a-z]*\n?|```$/g, '').trim()
-  // Marcadores explícitos: nos quedamos con lo que viene después del último.
-  const markers = [
-    /(?:^|\n)\s*(?:Final|Polished|Rewritten|Output|Result|Prompt|Draft)\s*(?:prompt)?\s*:\s*\n+/i,
-  ]
-  for (const m of markers) {
-    const matches = [...s.matchAll(new RegExp(m.source, m.flags + 'g'))]
-    if (matches.length) {
-      const last = matches[matches.length - 1]
-      s = s.slice(last.index + last[0].length).trim()
-    }
-  }
-  // Si sigue habiendo preámbulo tipo "The user wants…" o "I need to…" o
-  // enumeraciones "1. ", nos quedamos con el último párrafo suelto largo.
-  if (/^(the user|i need|i should|let me|okay|first,|now,)/i.test(s)) {
-    const paragraphs = s.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
-    // Preferimos el último párrafo que parezca un prompt (>200 chars, sin
-    // dos puntos al comienzo tipo "Structure:" ni lista numerada).
-    const promptLike = paragraphs.reverse().find(
-      (p) => p.length > 200 && !/^\d+\./.test(p) && !/^[A-Z][a-z]+:/.test(p)
-    )
-    if (promptLike) s = promptLike
-  }
-  return s.replace(/^```[a-z]*\n?|```$/g, '').trim()
-}
 
 export default function ExportModal({ sections, target, setTarget, ar, setAr, onClose, toast, settings, imageProvider, setImageProvider }) {
   const current = TARGETS.find((t) => t.id === target) || TARGETS[0]
@@ -100,17 +49,7 @@ export default function ExportModal({ sections, target, setTarget, ar, setAr, on
     if (!isReady(settings)) return toast(providerHint(settings), 'error')
     setPolishing(true)
     try {
-      // Pulir necesita output puro: si el modelo actual es un razonador que
-      // piensa en voz alta dentro del content (Kimi K2.7 Code etc.), se hace
-      // override transparente a un modelo "directo" del mismo proveedor.
-      const { settings: polishSettings, override } = pickDirectModel(settings)
-      const out = await callLLM(polishSettings, {
-        system: POLISH_SYSTEM(current),
-        user: `COMPILED PROMPT TO POLISH:\n\n${output}`,
-        maxTokens: 3000,
-      })
-      const clean = extractFinalPrompt(out)
-      if (!clean) throw new Error('respuesta vacía')
+      const { polished: clean, override } = await polishForTarget({ settings, target: current, compiled: output })
       setPolished(clean)
       toast(override ? `Prompt pulido ✓ (${override})` : 'Prompt pulido con IA ✓', 'ok')
     } catch (e) {

@@ -163,6 +163,26 @@ export default function LayoutCanvas({ bg, ratio, boxes, setBoxes, selected, set
         <button className="btn small" onClick={removeSelected} disabled={!selected}><Trash2 className="ico" />Quitar</button>
         <span className="hint" style={{ alignSelf: 'center' }}>Arrastrá sobre la imagen para crear una zona.</span>
       </div>
+      {boxes.length > 0 && (
+        <div className="lb-regions">
+          {boxes.map((b, i) => (
+            <button
+              key={b.id}
+              type="button"
+              className={'lb-region-row' + (b.id === selected ? ' active' : '')}
+              onClick={() => setSelected(b.id)}
+              style={{ borderLeftColor: b.color }}
+              title="Click para editar tipo y descripción"
+            >
+              <span className="el-num-badge" style={{ color: b.color, borderColor: b.color }}>{String(i + 1).padStart(2, '0')}</span>
+              <span className="el-desc">{b.desc || (b.type === 'text' ? `"${b.text}"` : 'sin descripción — click para editar')}</span>
+              <span className="el-palette">
+                {b.palette.slice(0, 3).map((h) => <span key={h} className="accent-chip" style={{ background: h }} title={h} />)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
       {sel && (
         <div className="lb-inspector">
           <div className="field">
