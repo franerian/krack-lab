@@ -283,13 +283,11 @@ ${mode === 'replica' ? '# Subject\n(scene content, filtered through the DNA)\n\n
 avoid: (elements that would break this DNA)`
 
 export async function analyzeImageStyle({ settings: rawSettings, image, images, mode = 'style', measurements = '', hint = '' }) {
-  // Con Structured Outputs, Kimi K2.7 respeta el schema y devuelve JSON
-  // limpio (razonamiento va a reasoning_content aparte) → NO hace falta
-  // el fallback a Qwen3.7 Plus. Fireworks es el único con Structured
-  // Outputs nativos; para el resto seguimos con el fallback preventivo.
-  const settings = rawSettings.provider === 'fireworks'
-    ? rawSettings
-    : pickDirectModel(rawSettings, { needsVision: true }).settings
+  // El Structured Output garantiza JSON válido pero NO impide que un
+  // razonador pesado (Kimi K2.7) divague DENTRO de los strings de sección
+  // ni que ignore Elements (verificado con logs reales) → el fallback a
+  // un modelo directo con visión aplica siempre.
+  const settings = pickDirectModel(rawSettings, { needsVision: true }).settings
   const imgs = images && images.length ? images : (image ? [image] : [])
   const multi = imgs.length > 1
   const base = multi
@@ -329,9 +327,7 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
 // el prompt para que la próxima iteración converja. El original es siempre
 // el objetivo; nunca se persiguen los artefactos de la generación.
 export async function refineFromComparison({ settings: rawSettings, original, generated, draft, mode = 'style', comparisonData = '' }) {
-  const settings = rawSettings.provider === 'fireworks'
-    ? rawSettings
-    : pickDirectModel(rawSettings, { needsVision: true }).settings
+  const settings = pickDirectModel(rawSettings, { needsVision: true }).settings
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
   const system = DNA_SYSTEM(mode) + `
 
@@ -533,9 +529,7 @@ Keep each section to max 2 sentences. No preamble — output only the sections.`
 }
 
 export async function critiqueStyleDNA({ settings: rawSettings, image, images, draft, mode = 'style', measurements = '' }) {
-  const settings = rawSettings.provider === 'fireworks'
-    ? rawSettings
-    : pickDirectModel(rawSettings, { needsVision: true }).settings
+  const settings = pickDirectModel(rawSettings, { needsVision: true }).settings
   const imgs = images && images.length ? images : (image ? [image] : [])
   const multi = imgs.length > 1
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
