@@ -491,7 +491,7 @@ export async function editLayout({ settings: rawSettings, caption, instruction }
 // destino, siguiendo SUS reglas documentadas (target.notes). El formato que
 // demostró funcionar es el "prompt dorado": medio primero, cada dato dicho
 // una vez, colores nombrados, ~120-160 palabras.
-const POLISH_SYSTEM = (target) => `Output ONLY the final rewritten prompt. NO preamble, NO analysis, NO planning, NO "Let me…", NO word counting, NO markdown fences, NO commentary before OR after. If you output anything other than the prompt itself, the response is wrong.
+const POLISH_SYSTEM = (target) => `Output ONLY the final rewritten prompt. NO preamble, NO analysis, NO planning, NO "Let me…", NO word counting, NO markdown fences, NO commentary before OR after — and NONE of that INSIDE the prompt either. Never insert a parenthetical aside auditing your own writing mid-sentence, e.g. "(2 sentences!)", "(wait, let's rephrase)", "(that's too long, splitting it)" — these must NEVER appear anywhere in the output, not even briefly before you "correct" them. If you catch yourself wanting to self-audit sentence count or phrasing, do that silently and output only the final result. If you output anything other than the prompt itself, the response is wrong.
 
 You are a senior prompt engineer writing the FINAL prompt for the platform "${target.label}".
 
@@ -524,6 +524,33 @@ export const extractFinalPrompt = (raw) => {
     )
     if (promptLike) s = promptLike
   }
+  // Red de seguridad: a veces el razonador se audita a sí mismo EN MEDIO del
+  // texto ("(2 sentences!)", "(wait, let's rephrase)") en vez de antes/después
+  // — el system prompt ya lo prohíbe explícitamente, pero esto limpia lo que
+  // igual se cuele.
+  s = s.replace(/\([^)]{0,80}\b(?:sentences?|let'?s|wait|rephrase|resplit|split|reword|revis\w*|too long|word count|counting|actually|hmm+|hold on|correction|instead)\b[^)]{0,80}\)/gi, '')
+    .replace(/\s*\.\s*\./g, '.')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+  // El auto-audit de arriba suele venir con un "reinicio": el modelo repite
+  // el párrafo casi entero para "corregirlo" (no una oración suelta — un
+  // bloque de 2+ oraciones). Si la apertura (~5 palabras) de una oración
+  // reaparece en alguna de las próximas 3, todo lo que hay ENTRE ambas es
+  // el borrador descartado — se salta directo a la versión reescrita.
+  const sentences = s.split(/(?<=[.!?])\s+(?=[A-Z])/)
+  const openingKey = (t) => t.trim().split(/\s+/).slice(0, 5).join(' ').toLowerCase()
+  const deduped = []
+  let i = 0
+  while (i < sentences.length) {
+    let restartAt = -1
+    for (let j = i + 1; j < Math.min(i + 4, sentences.length); j++) {
+      if (sentences[j].trim() && openingKey(sentences[i]) === openingKey(sentences[j])) { restartAt = j; break }
+    }
+    if (restartAt !== -1) { i = restartAt; continue }
+    deduped.push(sentences[i])
+    i++
+  }
+  s = deduped.join(' ').replace(/[ \t]{2,}/g, ' ').trim()
   return s.replace(/^```[a-z]*\n?|```$/g, '').trim()
 }
 
