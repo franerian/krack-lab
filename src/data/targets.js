@@ -59,8 +59,30 @@ const toTags = (text) =>
     .replace(/\s*,\s*/g, ', ')
     .trim()
 
-const negativeList = (sections) =>
-  toTags(get(sections, 'Negative').replace(/^avoid:\s*/i, ''))
+// El pulido del LLM deja el # Negative con ruido típico: "avoid:" inicial,
+// "No " en mayúscula pegado tras una lista minúscula, sub-cláusulas atadas
+// con "and", separadores mezclados (comas + punto y coma), duplicados
+// case-insensitive. Midjourney los tolera pero son tokens gastados.
+const negativeList = (sections) => {
+  const raw = get(sections, 'Negative')
+    .replace(/^avoid:\s*/i, '')
+    .replace(/;/g, ',')
+  const seen = new Set()
+  const items = []
+  for (let piece of raw.split(',')) {
+    piece = piece.trim()
+      .replace(/^(?:and\s+)?(?:absolutely\s+)?(?:any\s+)?no\s+/i, '')
+      .replace(/\.$/, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (piece.length < 2) continue
+    const key = piece.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    items.push(piece)
+  }
+  return toTags(items.join(', '))
+}
 
 export const TARGETS = [
   {
