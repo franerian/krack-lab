@@ -47,9 +47,11 @@ FORMAT REMINDER: your previous reply could not be parsed. Respond ONLY with the 
 
 // Structured Outputs: schema JSON de las secciones del prompt. En modo
 // "style" no se piden Subject/Action/Environment; en "replica" van todas.
-// Fireworks respeta json_schema y elimina el bug de razonadores hablando
-// en voz alta dentro del content (verificado con Kimi K2.7 Code: pasa de
-// 3000+ tokens de razonamiento inline a 250 tokens de JSON limpio).
+// El schema garantiza JSON válido pero NO impide que un razonador pesado
+// (Kimi K2.7) divague DENTRO de un string de sección ni que ignore un campo
+// opcional como Elements (verificado con logs reales) — por eso las pasadas
+// de visión del Lab (dnaVisionSettings) esquivan esos modelos SIEMPRE, el
+// schema no alcanza por sí solo.
 const ALL_SECTION_KEYS = ['Subject', 'Style', 'Composition', 'Camera', 'Lighting', 'Color', 'Mood', 'Action', 'Environment', 'Negative']
 const STYLE_BANNED = new Set(['Subject', 'Action', 'Environment'])
 
@@ -223,65 +225,94 @@ export async function fillCharacter({ settings, description, fieldIds, image }) 
 }
 
 // ── Style DNA Lab: deconstrucción visual de una imagen de referencia ──
-const DNA_SYSTEM = (mode) => `You are a visual deconstruction engine and a master prompt engineer. You receive ONE reference image. Your function is to extract its governing "Style DNA" and output a replication recipe that is 100% faithful and internally consistent.
+//
+// DNA_SYSTEM compone el prompt del extractor a partir de reglas nombradas,
+// cada una nacida de un bug real encontrado en producción (el comentario
+// de cada regla dice cuál). Antes vivían todas concatenadas en un solo
+// template literal de ~80 líneas que crecía por el final cada vez que
+// aparecía un caso nuevo — separarlas permite ubicar y tocar una regla
+// puntual sin releer el bloque entero. El texto de cada regla es idéntico
+// al original: esto es reorganización, no reescritura (los prompts están
+// afinados con muchas rondas de prueba/error, cambiar la redacción cambia
+// el comportamiento del modelo).
 
-STEP 0 — MEDIUM CLASSIFICATION (do this FIRST, it governs everything else):
+const DNA_INTRO = `You are a visual deconstruction engine and a master prompt engineer. You receive ONE reference image. Your function is to extract its governing "Style DNA" and output a replication recipe that is 100% faithful and internally consistent.`
+
+const DNA_STEP0_MEDIUM = `STEP 0 — MEDIUM CLASSIFICATION (do this FIRST, it governs everything else):
 Decide what the image physically IS at the rendering level. Pick the single best match:
 - Photograph (film or digital camera)
 - 3D render — and specify: photoreal CGI · STYLIZED / LOW-POLY game render · PS1/PS2-era real-time · Pixar/DreamWorks-style · clay/toy render
 - 2D digital illustration · concept art · matte painting
 - Cel / anime / cartoon animation
 - Painterly — oil, gouache, watercolor, acrylic
-- Vector / flat design · pixel art · risograph · collage / mixed media
+- Vector / flat design · pixel art · risograph · collage / mixed media`
 
-⚠ ANTI-BIAS RULE: the single most common and most damaging error is defaulting to "cinematic photography / photorealistic" for images that are actually renders or illustrations. RESIST IT. Look for non-photographic tells and, if ANY are present, it is NOT a photograph:
+// Verificado: el modelo defaulteaba a "cinematic photography" para renders
+// low-poly y 2D illustration con textura fotorrealista de fondo.
+const DNA_ANTI_BIAS_PHOTO = `⚠ ANTI-BIAS RULE: the single most common and most damaging error is defaulting to "cinematic photography / photorealistic" for images that are actually renders or illustrations. RESIST IT. Look for non-photographic tells and, if ANY are present, it is NOT a photograph:
 - faceted / low-polygon geometry, flat triangulated surfaces
 - flat or banded color fills, posterized gradients
 - ABSENCE of photographic sensor grain, chromatic aberration, real lens bokeh
 - visible brushstrokes, vertex/Gouraud shading, cel outlines, hand-placed edges
 - simplified / stylized forms, painted atmosphere rather than optically-captured haze
-Any caption or object inventory you may receive describes literal CONTENT and is phrased as if the scene were photographed — it is NOT evidence about the medium. Judge the medium ONLY from rendering qualities in the pixels.
+Any caption or object inventory you may receive describes literal CONTENT and is phrased as if the scene were photographed — it is NOT evidence about the medium. Judge the medium ONLY from rendering qualities in the pixels.`
 
-⚠ ANTI-BIAS RULE #2 — DO NOT DEFAULT TO "3D RENDER" FOR PAINTERLY / DREAMY / AI-ILLUSTRATION IMAGES. If the image shows heavy uniform noise/grain on TOP of soft blended forms, NO visible polygons or hard silhouettes, backlit color halos (rainbow gradients, aurora glows) with no physical light source, and blurred painted atmosphere with no photographic lens signature — it is a DIGITAL PAINTING / AI ILLUSTRATION / DREAMY MIXED-MEDIA, NEVER a 3D render (game engines cannot produce that grain-over-painting combination). Judge "3D" ONLY when the image shows readable 3D perspective depth AND either faceted geometry OR CGI-clean subsurface/specular shading. Softness alone is NOT evidence of 3D.
+// Verificado: el modelo sobrecorrigió la regla de arriba y empezó a
+// defaultear a "3D render" para pinturas/illustraciones dreamy con grano
+// pesado, que no tienen geometría 3D real.
+const DNA_ANTI_BIAS_3D = `⚠ ANTI-BIAS RULE #2 — DO NOT DEFAULT TO "3D RENDER" FOR PAINTERLY / DREAMY / AI-ILLUSTRATION IMAGES. If the image shows heavy uniform noise/grain on TOP of soft blended forms, NO visible polygons or hard silhouettes, backlit color halos (rainbow gradients, aurora glows) with no physical light source, and blurred painted atmosphere with no photographic lens signature — it is a DIGITAL PAINTING / AI ILLUSTRATION / DREAMY MIXED-MEDIA, NEVER a 3D render (game engines cannot produce that grain-over-painting combination). Judge "3D" ONLY when the image shows readable 3D perspective depth AND either faceted geometry OR CGI-clean subsurface/specular shading. Softness alone is NOT evidence of 3D.`
 
-PRIMARY DIRECTIVE — STYLISTIC HEGEMONY (THE STYLE IS THE LAW):
+const DNA_STYLISTIC_HEGEMONY = `PRIMARY DIRECTIVE — STYLISTIC HEGEMONY (THE STYLE IS THE LAW):
 After Step 0, silently lock:
 1. VISUAL MEDIUM — the exact medium from Step 0. Be specific ("stylized low-poly 3D game render", not "digital art"). This is the governing law.
 2. EXECUTION RULES — the hard constraints that define THIS medium's look: e.g. for low-poly render "flat-shaded polygonal facets, no photographic grain, painted volumetric fog, simplified silhouettes"; for 35mm photo "sensor grain, real lens falloff, optical bokeh". These rules are LAW.
 3. ERA / IP ADJACENCY — decade, engine, movement or adjacent title if present (e.g. "PS2-era survival-horror render", "The Long Drive / Jalopy indie-game look", "1970s Kodachrome").
 
-Every clause you write MUST obey that DNA. You are FORBIDDEN from naming any texture, material or optical effect that belongs to a DIFFERENT medium than the one in Step 0 (e.g. never write "film grain", "lens flare" or "photographic depth of field" for a flat-shaded render; never write "flat-color" and "gradient" together). Zero logical contradictions. Each clause is one atomic concept. The # Style section MUST open by naming the medium from Step 0 verbatim.
+Every clause you write MUST obey that DNA. You are FORBIDDEN from naming any texture, material or optical effect that belongs to a DIFFERENT medium than the one in Step 0 (e.g. never write "film grain", "lens flare" or "photographic depth of field" for a flat-shaded render; never write "flat-color" and "gradient" together). Zero logical contradictions. Each clause is one atomic concept. The # Style section MUST open by naming the medium from Step 0 verbatim.`
 
-${mode === 'style'
+// Único bloque condicional por modo: en "style" se prohíbe describir
+// contenido; en "replica" se pide inventario completo + la regla de
+// especie ambigua (verificado: forzaba "bird" sobre criaturas fantasía).
+const DNA_MODE_SCOPE = (mode) => mode === 'style'
   ? `MODE: STYLE ONLY. Describe ONLY the aesthetic treatment so it can be transferred to a completely different scene. You are FORBIDDEN from describing the subject, characters, objects or specific content of the image. No # Subject section.`
   : `MODE: FULL REPLICA. Also reconstruct the scene: include # Subject (and # Action / # Environment if relevant), each described through the lens of the Style DNA.
 REPLICA COMPLETENESS — INVENTORY, DON'T INVENT: # Subject must inventory every significant visible object (including easy-to-miss ones: hands, mirrors, wipers, signage, screens), each WITH its physical condition (bare/dead vs lush, worn vs new, lit vs off). And the reverse is LAW: never add objects, text, signs or details that are NOT in the image — generators invent clutter, so if the image contains no readable text or signage, # Negative MUST include "no text, no signage, no lettering".
 
-⚠ AMBIGUOUS / IMAGINARY CREATURES — DESCRIBE, DO NOT NAME: if the subject is a fantasy, fluffy, doll-like, hybrid or ambiguous creature (not clearly one real species), you are FORBIDDEN from committing to a species noun ("bird", "cat", "puppy", "seal"). Instead describe it morphologically: body shape (round/elongated), limbs (paws/flippers/wings — say what you actually see, not what you expect), fur/feather/skin texture, face features (snout/beak — again what is visible), size relative to frame. Reserve species names for cases where the image UNAMBIGUOUSLY shows the anatomy of that species (feathers + beak + wings = bird; scales + fins = fish). When unsure, write "small fluffy white creature, seal-like round body, cat-like snout, black bead eyes" — never guess a single species. Naming the wrong species locks generators onto the wrong anatomy forever.`}
+⚠ AMBIGUOUS / IMAGINARY CREATURES — DESCRIBE, DO NOT NAME: if the subject is a fantasy, fluffy, doll-like, hybrid or ambiguous creature (not clearly one real species), you are FORBIDDEN from committing to a species noun ("bird", "cat", "puppy", "seal"). Instead describe it morphologically: body shape (round/elongated), limbs (paws/flippers/wings — say what you actually see, not what you expect), fur/feather/skin texture, face features (snout/beak — again what is visible), size relative to frame. Reserve species names for cases where the image UNAMBIGUOUSLY shows the anatomy of that species (feathers + beak + wings = bird; scales + fins = fish). When unsure, write "small fluffy white creature, seal-like round body, cat-like snout, black bead eyes" — never guess a single species. Naming the wrong species locks generators onto the wrong anatomy forever.`
 
-MANDATORY: the # Camera section MUST state the precise shot type AND camera angle (e.g. "extreme low-angle wide shot"), plus lens character if readable.
+const DNA_RULE_CAMERA = `MANDATORY: the # Camera section MUST state the precise shot type AND camera angle (e.g. "extreme low-angle wide shot"), plus lens character if readable.`
 
-MANDATORY — LIGHT SOURCES: the # Lighting section MUST name every VISIBLE light source in the image, especially practicals (vehicle headlights, lamps, screens, fire, neon, dashboard glow). For each light, attribute it to its EMITTING OBJECT — never describe a glow without saying what produces it. State the time of day consistently with the measured brightness: brightness ≤3/10 means dusk/night — never describe it as "day".
+const DNA_RULE_LIGHT_SOURCES = `MANDATORY — LIGHT SOURCES: the # Lighting section MUST name every VISIBLE light source in the image, especially practicals (vehicle headlights, lamps, screens, fire, neon, dashboard glow). For each light, attribute it to its EMITTING OBJECT — never describe a glow without saying what produces it. State the time of day consistently with the measured brightness: brightness ≤3/10 means dusk/night — never describe it as "day".`
 
-MANDATORY — ACCENT COLORS: the # Color section must account for EVERY measured dominant hex, including minority accents (a 5-10% warm tone against a muted field is usually the soul of the image — dropping it is a critical failure). Write every color as an evocative NAME first with the hex in parentheses after it — e.g. "dusty slate blue-green (#494c50)". Generators read the names; the hexes are internal calibration.
+// Las dos cláusulas de abajo se agregaron después de ver que el modelo
+// reconocía matices en # Composition ("pink, green, blue, yellow") pero
+// los colapsaba a "dusty mauve" genérico en # Color — la sección que un
+// generador realmente lee para color.
+const DNA_RULE_ACCENT_COLORS = `MANDATORY — ACCENT COLORS: the # Color section must account for EVERY measured dominant hex, including minority accents (a 5-10% warm tone against a muted field is usually the soul of the image — dropping it is a critical failure). Write every color as an evocative NAME first with the hex in parentheses after it — e.g. "dusty slate blue-green (#494c50)". Generators read the names; the hexes are internal calibration.
 When two or more ACCENT hexes differ in hue (not just lightness/saturation — check their actual RGB balance), your names MUST reflect that hue difference explicitly, even when both are heavily muted: e.g. #9e787d and #8385a2 are NOT both "dusty mauve" — the first leans red/rose, the second leans blue-violet; name them "dusty rose-mauve (#9e787d)" and "muted slate-violet (#8385a2)". Collapsing hue-distinct accents into the same vague color family is a critical failure — it erases the image's actual color story.
-SELF-CONSISTENCY CHECK: if any OTHER section (# Composition, # Environment, # Mood) names a hue word — "pink", "green", "blue", "yellow", "violet", etc. — to describe the scene, that SAME hue MUST appear as a named color in # Color, anchored to one of the measured hexes. Never describe a color family in prose and then omit it from # Color — that is a critical failure, the palette is the section generators actually read for color.
+SELF-CONSISTENCY CHECK: if any OTHER section (# Composition, # Environment, # Mood) names a hue word — "pink", "green", "blue", "yellow", "violet", etc. — to describe the scene, that SAME hue MUST appear as a named color in # Color, anchored to one of the measured hexes. Never describe a color family in prose and then omit it from # Color — that is a critical failure, the palette is the section generators actually read for color.`
 
-MANDATORY — NO REDUNDANCY, MAX BREVITY: each section contributes ONLY its own dimension. The framing/POV is stated ONCE, in # Camera — # Subject says WHAT is visible, never how it is framed. Max 2 short atomic sentences per section: a tight 130-word prompt outperforms a 300-word one; repetition dilutes every signal.
+const DNA_RULE_NO_REDUNDANCY = `MANDATORY — NO REDUNDANCY, MAX BREVITY: each section contributes ONLY its own dimension. The framing/POV is stated ONCE, in # Camera — # Subject says WHAT is visible, never how it is framed. Max 2 short atomic sentences per section: a tight 130-word prompt outperforms a 300-word one; repetition dilutes every signal.`
 
-3D-vs-2D TELL: if the image shows true 3D perspective depth with faceted/flat-shaded geometry (even with painted-looking fog or textures), it is a STYLIZED 3D GAME RENDER — not a 2D illustration. Reserve "2D illustration / concept art" for images with no coherent 3D geometry.
+const DNA_RULE_2D_3D_TELL = `3D-vs-2D TELL: if the image shows true 3D perspective depth with faceted/flat-shaded geometry (even with painted-looking fog or textures), it is a STYLIZED 3D GAME RENDER — not a 2D illustration. Reserve "2D illustration / concept art" for images with no coherent 3D geometry.`
 
-MANDATORY — EDGE & FOCUS QUALITY: the Style DNA must state the EDGE CHARACTER of the image (soft/blended/diffuse vs crisp/defined/hard-lined) — getting this wrong changes the entire medium. The # Camera section must state the FOCUS BEHAVIOR: which planes are sharp and which are blurred (e.g. "foreground out of focus, midground readable"). If the image has no hard edges anywhere, the prompt must say so explicitly and # Negative must forbid crisp linework.
+const DNA_RULE_EDGE_FOCUS = `MANDATORY — EDGE & FOCUS QUALITY: the Style DNA must state the EDGE CHARACTER of the image (soft/blended/diffuse vs crisp/defined/hard-lined) — getting this wrong changes the entire medium. The # Camera section must state the FOCUS BEHAVIOR: which planes are sharp and which are blurred (e.g. "foreground out of focus, midground readable"). If the image has no hard edges anywhere, the prompt must say so explicitly and # Negative must forbid crisp linework.`
 
-MANDATORY — GRAIN & NOISE: if the image shows visible noise/grain (film grain, digital sensor noise, or an AI-illustration's uniform textured grain overlay), this is a GOVERNING trait of the medium, not a minor execution note — state its DENSITY (light/moderate/heavy) and CHARACTER (fine vs coarse, uniform vs patchy) explicitly in # Style, in the same sentence that names the medium, not buried later. CALIBRATE the density honestly — do NOT default to "heavy" out of habit: a fine, barely-there texture is "light" or "subtle" grain, not heavy; reserve "heavy" for grain coarse or dense enough to visibly compete with the forms underneath. Getting the density wrong is as bad as missing the grain entirely — both mislead the generator. If the image has no visible grain, state that surfaces are clean/noiseless.
+// Verificado: sin la frase de calibración, el modelo defaulteaba a "heavy
+// grain" para cualquier textura visible, aunque fuera sutil.
+const DNA_RULE_GRAIN_NOISE = `MANDATORY — GRAIN & NOISE: if the image shows visible noise/grain (film grain, digital sensor noise, or an AI-illustration's uniform textured grain overlay), this is a GOVERNING trait of the medium, not a minor execution note — state its DENSITY (light/moderate/heavy) and CHARACTER (fine vs coarse, uniform vs patchy) explicitly in # Style, in the same sentence that names the medium, not buried later. CALIBRATE the density honestly — do NOT default to "heavy" out of habit: a fine, barely-there texture is "light" or "subtle" grain, not heavy; reserve "heavy" for grain coarse or dense enough to visibly compete with the forms underneath. Getting the density wrong is as bad as missing the grain entirely — both mislead the generator. If the image has no visible grain, state that surfaces are clean/noiseless.`
 
-MANDATORY — DETAIL ECONOMY: state how much micro-detail the style permits, as an execution rule. A minimal/simplified style must say "sparse, simplified forms, large empty planes — no added clutter, no invented micro-detail"; a dense style must say so too. Generators fill silence with detail — if the original is economical, the prompt must actively forbid extra detail.
+const DNA_RULE_DETAIL_ECONOMY = `MANDATORY — DETAIL ECONOMY: state how much micro-detail the style permits, as an execution rule. A minimal/simplified style must say "sparse, simplified forms, large empty planes — no added clutter, no invented micro-detail"; a dense style must say so too. Generators fill silence with detail — if the original is economical, the prompt must actively forbid extra detail.`
 
-MANDATORY — BACKGROUND SHAPE, NOT JUST COLOR (but never invented): if a background or atmospheric element has a distinct GEOMETRIC STRUCTURE — an arc, a ring, a halo, a radiating band — describe that SHAPE explicitly in # Composition or # Environment, not just its color or softness. But this applies ONLY when the color regions are VISUALLY CONNECTED along one continuous path that traces an actual curve or ring — a real rainbow, a halo circling a light source, a radial gradient band. If instead the image shows SEPARATE, DISCONNECTED patches or blobs of different colors scattered at different positions (e.g. a red patch top-left, a green patch top-center, unrelated to each other, no connecting line between them), do NOT call that an "arc" or any other coherent shape — describe it plainly as "scattered color patches" or "isolated color blobs at [positions]". Inventing a connected shape (arc, ring) out of disconnected patches is a hallucination exactly like inventing an object — verify connectivity before naming a shape.
+// Verificado: un arco iris nítido se reducía a "blurred multicolored
+// background" — se perdía la FORMA, no solo el color. La cláusula de
+// conectividad evita el efecto rebote: inventar un arco sobre manchas de
+// color sueltas que no forman ninguna curva real.
+const DNA_RULE_BACKGROUND_SHAPE = `MANDATORY — BACKGROUND SHAPE, NOT JUST COLOR (but never invented): if a background or atmospheric element has a distinct GEOMETRIC STRUCTURE — an arc, a ring, a halo, a radiating band — describe that SHAPE explicitly in # Composition or # Environment, not just its color or softness. But this applies ONLY when the color regions are VISUALLY CONNECTED along one continuous path that traces an actual curve or ring — a real rainbow, a halo circling a light source, a radial gradient band. If instead the image shows SEPARATE, DISCONNECTED patches or blobs of different colors scattered at different positions (e.g. a red patch top-left, a green patch top-center, unrelated to each other, no connecting line between them), do NOT call that an "arc" or any other coherent shape — describe it plainly as "scattered color patches" or "isolated color blobs at [positions]". Inventing a connected shape (arc, ring) out of disconnected patches is a hallucination exactly like inventing an object — verify connectivity before naming a shape.`
 
-CALIBRATED SCALES: when the user message includes MEASURED GROUND TRUTH, those values were computed programmatically from the pixels and are non-negotiable facts. Your wording for contrast, saturation and brightness MUST be consistent with the measured N/10 values (e.g. contrast 3/10 can never be "high contrast"). In # Color, cite the dominant hex values verbatim alongside their color names. If CAMERA EXIF is present, # Camera must be built on it. Express contrast, saturation and brightness as "N/10" ratings inside the prompt so they stay reproducible.
+const DNA_RULE_CALIBRATED_SCALES = `CALIBRATED SCALES: when the user message includes MEASURED GROUND TRUTH, those values were computed programmatically from the pixels and are non-negotiable facts. Your wording for contrast, saturation and brightness MUST be consistent with the measured N/10 values (e.g. contrast 3/10 can never be "high contrast"). In # Color, cite the dominant hex values verbatim alongside their color names. If CAMERA EXIF is present, # Camera must be built on it. Express contrast, saturation and brightness as "N/10" ratings inside the prompt so they stay reproducible.`
 
-OUTPUT FORMAT — your entire response is EXACTLY this structure and nothing else (no preamble, no notes, no fences), in English:
+const DNA_OUTPUT_FORMAT = (mode) => `OUTPUT FORMAT — your entire response is EXACTLY this structure and nothing else (no preamble, no notes, no fences), in English:
 
 ${mode === 'replica' ? '# Subject\n(scene content, filtered through the DNA)\n\n' : ''}# Style
 (governing DNA first: medium, execution rules, era/adjacency)
@@ -304,14 +335,86 @@ ${mode === 'replica' ? '# Subject\n(scene content, filtered through the DNA)\n\n
 # Negative
 avoid: (elements that would break this DNA)`
 
-export async function analyzeImageStyle({ settings: rawSettings, image, images, mode = 'style', measurements = '', hint = '' }) {
-  // El Structured Output garantiza JSON válido pero NO impide que un
-  // razonador pesado (Kimi K2.7) divague DENTRO de los strings de sección
-  // ni que ignore Elements (verificado con logs reales) → el fallback a
-  // un modelo directo con visión aplica siempre.
-  const settings = pickDirectModel(rawSettings, { needsVision: true }).settings
+// El orden de este array ES el orden en que las reglas llegan al modelo —
+// para reordenar prioridad, reordenar acá, no reescribir texto.
+const DNA_SYSTEM = (mode) => [
+  DNA_INTRO,
+  DNA_STEP0_MEDIUM,
+  DNA_ANTI_BIAS_PHOTO,
+  DNA_ANTI_BIAS_3D,
+  DNA_STYLISTIC_HEGEMONY,
+  DNA_MODE_SCOPE(mode),
+  DNA_RULE_CAMERA,
+  DNA_RULE_LIGHT_SOURCES,
+  DNA_RULE_ACCENT_COLORS,
+  DNA_RULE_NO_REDUNDANCY,
+  DNA_RULE_2D_3D_TELL,
+  DNA_RULE_EDGE_FOCUS,
+  DNA_RULE_GRAIN_NOISE,
+  DNA_RULE_DETAIL_ECONOMY,
+  DNA_RULE_BACKGROUND_SHAPE,
+  DNA_RULE_CALIBRATED_SCALES,
+  DNA_OUTPUT_FORMAT(mode),
+].join('\n\n')
+
+// ── Addenda por pasada: cada pasada del Lab (extracción, autocrítica,
+// loop fotocopiadora) suma a DNA_SYSTEM solo lo que le es propio ──
+
+const SPATIAL_MAP_RULE = `SPATIAL MAP: additionally output "Elements" — ONLY the discrete visual OBJECTS in the image (1 to 6). An "object" is a thing with its own silhouette — a creature, character, item, vehicle, prop, piece of readable text/signage. It is NOT: a background haze field, a color gradient, a light halo, a shadow blob, an out-of-focus mass, a floor/ground plane, a wall, a sky, or "the surface the subject sits on". If the image contains only ONE object, output ONE element — do not pad the count with atmospheric regions. Each element: short desc (what it is, its condition) + TIGHT bbox as [ymin, xmin, ymax, xmax] on a 0-1000 grid (origin at top-left; 1000 = full height/width). If in doubt whether something is an object or atmosphere, EXCLUDE it.`
+
+// Verificado: sin la ley anti-contaminación, un "0" alucinado por el
+// generador en la iteración anterior se colaba como dato real en el
+// prompt corregido, y el modelo lo negativaba con un hedge inútil
+// ("except if present") en vez de prohibirlo sin condición.
+const PHOTOCOPIER_MODE_ADDENDUM = `PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference — the absolute target. The SECOND is an AI GENERATION produced from the CURRENT PROMPT. You are the error-correction system of a photocopier: you do not judge beauty, you measure drift and correct it.
+1. Silently diff the generation against the original: what did it LOSE (elements, texture, light behavior), what did it ADD that isn't in the original, what did it EXAGGERATE or UNDERSHOOT (contrast, saturation, mood intensity, scale)?
+2. If OBJECTIVE COMPARISON DATA is provided, treat it as measured fact and compensate explicitly (e.g. generation more saturated than original → lower the saturation wording).
+3. Output the CORRECTED full prompt in the exact same section format — nothing else. Strengthen constraints where the generation drifted, add what it lost, remove or soften what it over-produced. Never describe the generation; describe what the NEXT generation must do to match the ORIGINAL.
+
+⚠ ANTI-CONTAMINATION LAW (critical — generators hallucinate props, text, logos, extra creatures, watermarks):
+Any element, text, letter, digit, symbol, object, character, background prop or lighting effect that appears in the GENERATION but is NOT visible in the ORIGINAL is a HALLUCINATION. You MUST:
+(a) NEVER mention it in # Subject, # Composition, # Environment, # Color, # Lighting, # Style or # Mood.
+(b) ADD it, by its own specific name, to # Negative — describe the actual hallucinated thing you saw (a shape, a mark, a creature, a prop), not a generic category.
+Ask yourself for every noun in the current prompt: "did I see this in the FIRST image?" If no, delete it from the positive sections and negate it. The prompt must describe the ORIGINAL — never carry generation artifacts forward. Contamination compounds: a hallucination adopted once locks in for every future iteration.
+# Negative bans are UNCONDITIONAL. Never write a hedge like "except if present" or "unless it appears" — if you are unsure whether something is a hallucination, ban it outright; a false-positive ban costs nothing, a hedge is useless to a generator that cannot evaluate conditions.`
+
+const VERIFICATION_CHECKLIST = (multi, imgCount) => `VERIFICATION MODE: you receive a DRAFT prompt produced from ${multi ? `these ${imgCount} reference images that share ONE common style` : 'this same image'}. Audit it against this CHECKLIST, item by item, and fix EVERY failure:${multi ? '\n0. SHARED STYLE — the DNA must describe only what is CONSISTENT across all images; drop anything specific to a single image.' : ''}
+1. MEDIUM — is the Step-0 medium right? 3D perspective + faceted geometry = 3D render, never "2D illustration"; no photo tells = never "photography".
+2. TIME & BRIGHTNESS — does the wording match the measured brightness? ≤3/10 and any form of "day/daylight" appears = FAILURE, rewrite as dusk/night.
+3. LIGHTS — is every visible light present AND attributed to its emitting object (headlights, radio dial, lamp, sky)? A glow with no named source = failure.
+4. COLORS — is every measured hex present as "name (#hex)", including minority accents? A dropped accent = failure.
+5. EDGES & FOCUS — does the draft state the edge character (soft vs crisp) and which planes are blurred?
+6. DETAIL ECONOMY — if the image is sparse, does the draft forbid added clutter?
+7. INVENTORY (replica mode) — every visible object present with its condition (hands, mirrors, wipers…)? Anything invented that is not in the image? Image has no readable text → # Negative must include "no text, no signage".
+8. REDUNDANCY — framing stated more than once across sections = failure; keep it only in # Camera. Max 2 short sentences per section.
+9. EXAGGERATIONS & CONTRADICTIONS — any wording stronger than what the image shows, or violating the measurements or the DNA itself.
+Output the CORRECTED full prompt in the exact same section format — nothing else. Keep what the draft got right.`
+
+// ── Helpers compartidos por las 3 pasadas de visión del Lab (extracción,
+// autocrítica, loop fotocopiadora) — mismo boilerplate, repetido 3 veces
+// antes de esta extracción ──
+
+// Todas las pasadas de visión esquivan razonadores pesados (Kimi K2.7…):
+// el Structured Output garantiza JSON válido pero no impide que el modelo
+// divague DENTRO de un string de sección ni que ignore campos opcionales.
+const dnaVisionSettings = (rawSettings) => pickDirectModel(rawSettings, { needsVision: true }).settings
+
+const resolveImages = (image, images) => {
   const imgs = images && images.length ? images : (image ? [image] : [])
-  const multi = imgs.length > 1
+  return { imgs, multi: imgs.length > 1 }
+}
+
+const STYLE_MODE_BANNED_SECTIONS = ['Subject', 'Action', 'Environment']
+const dropBannedSections = (mode, parsed) =>
+  mode === 'style' ? parsed.filter((s) => !STYLE_MODE_BANNED_SECTIONS.includes(s.name)) : parsed
+
+const requireParsed = (parsed, trace) => {
+  if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
+}
+
+export async function analyzeImageStyle({ settings: rawSettings, image, images, mode = 'style', measurements = '', hint = '' }) {
+  const settings = dnaVisionSettings(rawSettings)
+  const { imgs, multi } = resolveImages(image, images)
   const base = multi
     ? `You are given ${imgs.length} reference images that SHARE ONE common visual style (a moodboard). Extract ONLY the Style DNA that is CONSISTENT across ALL of them — the medium, execution rules, lighting, palette and mood they have in common. IGNORE the specific subject/content of any single image; the style will be applied to completely different scenes.`
     : mode === 'style'
@@ -321,10 +424,7 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
   // también los elementos con bbox. Todos los proveedores tienen Structured
   // Outputs; si el modelo ignora el campo, elements queda vacío sin romper.
   const wantElements = mode === 'replica' && !multi
-  let system = DNA_SYSTEM(mode)
-  if (wantElements) {
-    system += `\n\nSPATIAL MAP: additionally output "Elements" — ONLY the discrete visual OBJECTS in the image (1 to 6). An "object" is a thing with its own silhouette — a creature, character, item, vehicle, prop, piece of readable text/signage. It is NOT: a background haze field, a color gradient, a light halo, a shadow blob, an out-of-focus mass, a floor/ground plane, a wall, a sky, or "the surface the subject sits on". If the image contains only ONE object, output ONE element — do not pad the count with atmospheric regions. Each element: short desc (what it is, its condition) + TIGHT bbox as [ymin, xmin, ymax, xmax] on a 0-1000 grid (origin at top-left; 1000 = full height/width). If in doubt whether something is an object or atmosphere, EXCLUDE it.`
-  }
+  const system = wantElements ? `${DNA_SYSTEM(mode)}\n\n${SPATIAL_MAP_RULE}` : DNA_SYSTEM(mode)
   const withHint = hint.trim() ? `${base}\n\nUSER GUIDANCE (apply while extracting): ${hint.trim()}` : base
   const user = measurements ? `${withHint}\n\n${measurements}` : withHint
   // "Elements" es la última propiedad del schema JSON (después de las 10
@@ -338,10 +438,9 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
     system, user, maxTokens: wantElements ? 2600 : 1600, images: imgs,
     schema: sectionsSchema(mode, { withElements: wantElements }),
   })
-  const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
-  const sections = parsed.filter((s) => !banned.includes(s.name))
+  const sections = dropBannedSections(mode, parsed)
   const trace = { pass: 'extract', system, user, raw, retried }
-  if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
+  requireParsed(parsed, trace)
   // Elementos espaciales validados (bbox 0-1000 coherente y con área real).
   const elements = (json?.Elements || [])
     .filter((e) => Array.isArray(e.bbox) && e.bbox.length === 4 && e.desc)
@@ -356,30 +455,17 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
 // el prompt para que la próxima iteración converja. El original es siempre
 // el objetivo; nunca se persiguen los artefactos de la generación.
 export async function refineFromComparison({ settings: rawSettings, original, generated, draft, mode = 'style', comparisonData = '' }) {
-  const settings = pickDirectModel(rawSettings, { needsVision: true }).settings
+  const settings = dnaVisionSettings(rawSettings)
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
-  const system = DNA_SYSTEM(mode) + `
-
-PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference — the absolute target. The SECOND is an AI GENERATION produced from the CURRENT PROMPT. You are the error-correction system of a photocopier: you do not judge beauty, you measure drift and correct it.
-1. Silently diff the generation against the original: what did it LOSE (elements, texture, light behavior), what did it ADD that isn't in the original, what did it EXAGGERATE or UNDERSHOOT (contrast, saturation, mood intensity, scale)?
-2. If OBJECTIVE COMPARISON DATA is provided, treat it as measured fact and compensate explicitly (e.g. generation more saturated than original → lower the saturation wording).
-3. Output the CORRECTED full prompt in the exact same section format — nothing else. Strengthen constraints where the generation drifted, add what it lost, remove or soften what it over-produced. Never describe the generation; describe what the NEXT generation must do to match the ORIGINAL.
-
-⚠ ANTI-CONTAMINATION LAW (critical — generators hallucinate props, text, logos, extra creatures, watermarks):
-Any element, text, letter, digit, symbol, object, character, background prop or lighting effect that appears in the GENERATION but is NOT visible in the ORIGINAL is a HALLUCINATION. You MUST:
-(a) NEVER mention it in # Subject, # Composition, # Environment, # Color, # Lighting, # Style or # Mood.
-(b) ADD it, by its own specific name, to # Negative — describe the actual hallucinated thing you saw (a shape, a mark, a creature, a prop), not a generic category.
-Ask yourself for every noun in the current prompt: "did I see this in the FIRST image?" If no, delete it from the positive sections and negate it. The prompt must describe the ORIGINAL — never carry generation artifacts forward. Contamination compounds: a hallucination adopted once locks in for every future iteration.
-# Negative bans are UNCONDITIONAL. Never write a hedge like "except if present" or "unless it appears" — if you are unsure whether something is a hallucination, ban it outright; a false-positive ban costs nothing, a hedge is useless to a generator that cannot evaluate conditions.`
+  const system = `${DNA_SYSTEM(mode)}\n\n${PHOTOCOPIER_MODE_ADDENDUM}`
   const user = `CURRENT PROMPT (the one that produced the second image):\n${draftText}${comparisonData ? `\n\n${comparisonData}` : ''}\n\nFirst image = ORIGINAL reference (target). Second image = generation to correct. Output the corrected prompt.`
   // Usa la versión chica del base64 (512max, 0.75) para ahorrar tokens; si
   // el caller no la calculó (ej. imagen del historial), cae al base64 normal.
   const asLlm = (im) => ({ base64: im.llmBase64 || im.base64, mediaType: im.mediaType })
   const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: [asLlm(original), asLlm(generated)], schema: sectionsSchema(mode) })
-  const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
-  const sections = mergeOverDraft(draft, parsed.filter((s) => !banned.includes(s.name)))
+  const sections = mergeOverDraft(draft, dropBannedSections(mode, parsed))
   const trace = { pass: 'refine', system, user, raw, retried }
-  if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
+  requireParsed(parsed, trace)
   return { sections, trace }
 }
 
@@ -592,29 +678,15 @@ Keep each section to max 2 sentences. No preamble — output only the sections.`
 }
 
 export async function critiqueStyleDNA({ settings: rawSettings, image, images, draft, mode = 'style', measurements = '' }) {
-  const settings = pickDirectModel(rawSettings, { needsVision: true }).settings
-  const imgs = images && images.length ? images : (image ? [image] : [])
-  const multi = imgs.length > 1
+  const settings = dnaVisionSettings(rawSettings)
+  const { imgs, multi } = resolveImages(image, images)
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
-  const system = DNA_SYSTEM(mode) + `
-
-VERIFICATION MODE: you receive a DRAFT prompt produced from ${multi ? `these ${imgs.length} reference images that share ONE common style` : 'this same image'}. Audit it against this CHECKLIST, item by item, and fix EVERY failure:${multi ? '\n0. SHARED STYLE — the DNA must describe only what is CONSISTENT across all images; drop anything specific to a single image.' : ''}
-1. MEDIUM — is the Step-0 medium right? 3D perspective + faceted geometry = 3D render, never "2D illustration"; no photo tells = never "photography".
-2. TIME & BRIGHTNESS — does the wording match the measured brightness? ≤3/10 and any form of "day/daylight" appears = FAILURE, rewrite as dusk/night.
-3. LIGHTS — is every visible light present AND attributed to its emitting object (headlights, radio dial, lamp, sky)? A glow with no named source = failure.
-4. COLORS — is every measured hex present as "name (#hex)", including minority accents? A dropped accent = failure.
-5. EDGES & FOCUS — does the draft state the edge character (soft vs crisp) and which planes are blurred?
-6. DETAIL ECONOMY — if the image is sparse, does the draft forbid added clutter?
-7. INVENTORY (replica mode) — every visible object present with its condition (hands, mirrors, wipers…)? Anything invented that is not in the image? Image has no readable text → # Negative must include "no text, no signage".
-8. REDUNDANCY — framing stated more than once across sections = failure; keep it only in # Camera. Max 2 short sentences per section.
-9. EXAGGERATIONS & CONTRADICTIONS — any wording stronger than what the image shows, or violating the measurements or the DNA itself.
-Output the CORRECTED full prompt in the exact same section format — nothing else. Keep what the draft got right.`
+  const system = `${DNA_SYSTEM(mode)}\n\n${VERIFICATION_CHECKLIST(multi, imgs.length)}`
   const user = `DRAFT TO VERIFY:\n${draftText}${measurements ? `\n\n${measurements}` : ''}`
   const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: imgs, schema: sectionsSchema(mode) })
-  const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
-  const sections = mergeOverDraft(draft, parsed.filter((s) => !banned.includes(s.name)))
+  const sections = mergeOverDraft(draft, dropBannedSections(mode, parsed))
   const trace = { pass: 'critique', system, user, raw, retried }
-  if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
+  requireParsed(parsed, trace)
   return { sections, trace }
 }
 
