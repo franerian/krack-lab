@@ -113,7 +113,11 @@ function detectAccents(pixels, centroids) {
     if (best > 60 * 60) outliers.push(p)
   }
   if (outliers.length < Math.max(8, n * 0.002)) return []
-  const k = Math.min(4, outliers.length)
+  // k=4 fusionaba matices distintos entre sí (verificado: 4 halos de color
+  // separados —rojo/verde/violeta/amarillo— colapsaban a 2-3 acentos porque
+  // el propio re-clustering de outliers no tenía margen para separarlos).
+  // k=7 les da lugar antes de que el filtro por pct/distancia recorte.
+  const k = Math.min(7, outliers.length)
   const { centroids: ac, counts } = kmeansCore(outliers, k, 8)
   return ac
     .map((c, i) => ({ c, hex: toHex(c), pct: Math.round((counts[i] / n) * 1000) / 10 }))
@@ -148,6 +152,7 @@ export function paletteForRegion(dataUrl, box, top = 4) {
       canvas.width = SIZE
       canvas.height = SIZE
       const ctx = canvas.getContext('2d', { willReadFrequently: true })
+      ctx.imageSmoothingEnabled = false
       try {
         ctx.drawImage(img, sx, sy, sw, sh, 0, 0, SIZE, SIZE)
         const { data } = ctx.getImageData(0, 0, SIZE, SIZE)
@@ -169,11 +174,18 @@ export function measureImage(dataUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
+      // SIZE chico + downscale >10:1 con suavizado (default) hace que el
+      // navegador PROMEDIE/difumine cada parche de color chico y saturado
+      // (rojo, verde, amarillo) con el gris/ruido que lo rodea antes de que
+      // el k-means vea un solo píxel — los acentos vívidos desaparecían en
+      // el muestreo, no en la lectura del LLM. Point-sampling (sin suavizado)
+      // preserva el color real de cada píxel elegido.
       const SIZE = 96
       const canvas = document.createElement('canvas')
       canvas.width = SIZE
       canvas.height = SIZE
       const ctx = canvas.getContext('2d', { willReadFrequently: true })
+      ctx.imageSmoothingEnabled = false
       ctx.drawImage(img, 0, 0, SIZE, SIZE)
       const { data } = ctx.getImageData(0, 0, SIZE, SIZE)
 
@@ -210,11 +222,13 @@ export function measureImage(dataUrl) {
 
       const { palette, centroids, smallClusters } = kmeansPalette(pixels)
       // Acentos = clusters chicos del k-means + outliers cromáticos que no
-      // consiguieron cluster, deduplicados entre sí (dist > 30).
+      // consiguieron cluster, deduplicados entre sí. Tope subido a 6 y dedupe
+      // más estricto (24 en vez de 30) — con 4 tope, matices distintos mismo
+      // apenas se filtraba uno perdían su lugar contra el más grande en área.
       const accents = []
       for (const a of [...smallClusters, ...detectAccents(pixels, centroids)].sort((x, y) => y.pct - x.pct)) {
-        if (accents.every((b) => dist2(a.c, b.c) > 30 * 30)) accents.push(a)
-        if (accents.length >= 4) break
+        if (accents.every((b) => dist2(a.c, b.c) > 24 * 24)) accents.push(a)
+        if (accents.length >= 6) break
       }
       resolve({
         palette,
