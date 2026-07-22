@@ -96,11 +96,23 @@ async function callParsed(settings, req) {
   let raw = await callLLM(settings, useSchema ? { ...req, responseSchema: req.schema } : req)
   let parsed = []
   let json = null // objeto crudo (para campos extra del schema, ej. Elements)
+  let jsonFailed = false
   if (useSchema) {
     try {
       json = JSON.parse(raw)
       parsed = jsonToSections(json)
-    } catch { /* cae al parseo por texto abajo */ }
+    } catch { jsonFailed = true }
+  }
+  // JSON inválido con schema activo casi siempre es truncado por maxTokens
+  // corto (campos al final del schema, como "Elements", nunca llegan a
+  // emitirse) — reintentar CON más margen y sin perder el schema, en vez de
+  // caer directo al modo texto plano que pierde Elements para siempre.
+  if (jsonFailed) {
+    raw = await callLLM(settings, { ...req, responseSchema: req.schema, maxTokens: (req.maxTokens || 1600) + 1200 })
+    try {
+      json = JSON.parse(raw)
+      parsed = jsonToSections(json)
+    } catch { /* sigue al parseo por texto abajo */ }
   }
   if (!parsed.length) parsed = textToSections(raw)
   let retried = false
@@ -315,8 +327,15 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
   }
   const withHint = hint.trim() ? `${base}\n\nUSER GUIDANCE (apply while extracting): ${hint.trim()}` : base
   const user = measurements ? `${withHint}\n\n${measurements}` : withHint
+  // "Elements" es la última propiedad del schema JSON (después de las 10
+  // secciones de prosa) — con maxTokens fijo en 1600 y las reglas MANDATORY
+  // acumuladas exigiendo secciones más ricas, el modelo se queda sin
+  // presupuesto ANTES de llegar a Elements: el JSON queda truncado/inválido,
+  // falla el parseo, y cae al modo texto plano que ni pide ni recupera cajas
+  // (verificado: "Fireworks no está creando cajas"). Más margen cuando se
+  // piden Elements.
   const { raw, parsed, retried, json } = await callParsed(settings, {
-    system, user, maxTokens: 1600, images: imgs,
+    system, user, maxTokens: wantElements ? 2600 : 1600, images: imgs,
     schema: sectionsSchema(mode, { withElements: wantElements }),
   })
   const banned = mode === 'style' ? ['Subject', 'Action', 'Environment'] : []
