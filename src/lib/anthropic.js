@@ -343,8 +343,9 @@ PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference �
 ⚠ ANTI-CONTAMINATION LAW (critical — generators hallucinate props, text, logos, extra creatures, watermarks):
 Any element, text, letter, digit, symbol, object, character, background prop or lighting effect that appears in the GENERATION but is NOT visible in the ORIGINAL is a HALLUCINATION. You MUST:
 (a) NEVER mention it in # Subject, # Composition, # Environment, # Color, # Lighting, # Style or # Mood.
-(b) ADD it explicitly by name to # Negative (e.g. if the generation invented a floating "0", write "no numerals, no floating digits, no glyphs of any kind" in # Negative; if it invented a bird when the original showed a seal, write "no birds, no additional creatures").
-Ask yourself for every noun in the current prompt: "did I see this in the FIRST image?" If no, delete it from the positive sections and negate it. The prompt must describe the ORIGINAL — never carry generation artifacts forward. Contamination compounds: a hallucination adopted once locks in for every future iteration.`
+(b) ADD it, by its own specific name, to # Negative — describe the actual hallucinated thing you saw (a shape, a mark, a creature, a prop), not a generic category.
+Ask yourself for every noun in the current prompt: "did I see this in the FIRST image?" If no, delete it from the positive sections and negate it. The prompt must describe the ORIGINAL — never carry generation artifacts forward. Contamination compounds: a hallucination adopted once locks in for every future iteration.
+# Negative bans are UNCONDITIONAL. Never write a hedge like "except if present" or "unless it appears" — if you are unsure whether something is a hallucination, ban it outright; a false-positive ban costs nothing, a hedge is useless to a generator that cannot evaluate conditions.`
   const user = `CURRENT PROMPT (the one that produced the second image):\n${draftText}${comparisonData ? `\n\n${comparisonData}` : ''}\n\nFirst image = ORIGINAL reference (target). Second image = generation to correct. Output the corrected prompt.`
   // Usa la versión chica del base64 (512max, 0.75) para ahorrar tokens; si
   // el caller no la calculó (ej. imagen del historial), cae al base64 normal.
