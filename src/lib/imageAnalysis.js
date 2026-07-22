@@ -10,6 +10,46 @@ const dist2 = (a, b) => {
   return dr * dr + dg * dg + db * db
 }
 
+// Un verde/amarillo pastel mezclado con gris de fondo puede quedar a solo
+// ~20-30 unidades RGB de ese gris (verificado con caso real) — la distancia
+// euclidiana sola confunde "mismo color" con "matiz distinto, magnitud
+// parecida". saturationOf/hueDeg + isCloseColor comparan matiz cuando ambos
+// colores tienen uno definido, y sólo caen a distancia RGB pura si alguno
+// es casi acromático (gris/blanco/negro, donde el matiz es ruido inestable).
+const saturationOf = ([r, g, b]) => {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b)
+  return mx === 0 ? 0 : (mx - mn) / mx
+}
+const hueDeg = ([r, g, b]) => {
+  const rn = r / 255, gn = g / 255, bn = b / 255
+  const mx = Math.max(rn, gn, bn), mn = Math.min(rn, gn, bn), d = mx - mn
+  if (d === 0) return null
+  let h
+  if (mx === rn) h = ((gn - bn) / d) % 6
+  else if (mx === gn) h = (bn - rn) / d + 2
+  else h = (rn - gn) / d + 4
+  h *= 60
+  return h < 0 ? h + 360 : h
+}
+// ASIMÉTRICA a propósito: "a" es siempre el candidato que se está evaluando
+// (un acento), "b" la referencia (un dominante u otro acento ya aceptado).
+function isCloseColor(a, b, rgbThresh) {
+  const satA = saturationOf(a)
+  // "a" sin matiz propio (gris/blanco/negro) → el tono no aporta señal,
+  // comparar solo por magnitud.
+  if (satA < 0.08) return dist2(a, b) <= rgbThresh * rgbThresh
+  // "a" SÍ tiene un matiz definido: si "b" es casi acromático, un color con
+  // tono propio NUNCA es "el mismo color" que un gris solo por tener
+  // magnitud parecida (este era el bug: un verde pastel a distancia RGB
+  // chica del gris dominante se descartaba como si fuera gris).
+  const satB = saturationOf(b)
+  if (satB < 0.08) return false
+  const ha = hueDeg(a), hb = hueDeg(b)
+  let hd = Math.abs(ha - hb)
+  if (hd > 180) hd = 360 - hd
+  return dist2(a, b) <= rgbThresh * rgbThresh && hd <= 30
+}
+
 // ── Paleta dominante por k-means sobre una muestra de píxeles ──
 function kmeansCore(pixels, k, iterations = 8) {
   // Inicialización farthest-point: cada centroide arranca en el color más
@@ -102,35 +142,43 @@ function detectAccents(pixels, centroids) {
   const n = pixels.length
   const outliers = []
   for (const p of pixels) {
-    let best = Infinity
-    for (const c of centroids) {
-      const dr = p[0] - c[0]
-      const dg = p[1] - c[1]
-      const db = p[2] - c[2]
-      const d = dr * dr + dg * dg + db * db
-      if (d < best) best = d
-    }
-    if (best > 60 * 60) outliers.push(p)
+    // Antes: "outlier" = lejos en RGB de TODOS los dominantes. Un verde/
+    // amarillo pastel mezclado con gris queda a ~20-30 unidades del gris
+    // dominante (verificado con caso real) — bien debajo de cualquier
+    // umbral razonable, así que ni siquiera entraba al pool de outliers a
+    // re-clusterizar. isCloseColor exige además que el MATIZ coincida
+    // (salvo que alguno de los dos sea casi acromático), así que un color
+    // con tono propio deja de contarse como "igual al gris" solo por tener
+    // magnitud parecida.
+    if (centroids.every((c) => !isCloseColor(p, c, 60))) outliers.push(p)
   }
   if (outliers.length < Math.max(8, n * 0.002)) return []
-  // k=4 fusionaba matices distintos entre sí (verificado: 4 halos de color
-  // separados —rojo/verde/violeta/amarillo— colapsaban a 2-3 acentos porque
-  // el propio re-clustering de outliers no tenía margen para separarlos).
-  // k=7 les da lugar antes de que el filtro por pct/distancia recorte.
-  const k = Math.min(7, outliers.length)
-  const { centroids: ac, counts } = kmeansCore(outliers, k, 8)
-  return ac
-    .map((c, i) => ({ c, hex: toHex(c), pct: Math.round((counts[i] / n) * 1000) / 10 }))
+  // Un k-means único sobre el pool combinado de outliers está sesgado por
+  // DENSIDAD: si el rojo tiene más píxeles atípicos que el verde, el
+  // clustering le asigna más clusters al rojo y el verde puede quedar sin
+  // ninguno (verificado: 4 halos inyectados con igual área → solo 2-3
+  // matices sobrevivían). Se resuelve bineando por MATIZ (30° por bin) antes
+  // de clusterizar — cada familia de color compite por su propio bin, no
+  // por popularidad de píxeles contra las demás.
+  const bins = new Map()
+  for (const p of outliers) {
+    const sat = saturationOf(p)
+    const h = sat < 0.08 ? -1 : Math.floor(hueDeg(p) / 30)
+    if (!bins.has(h)) bins.set(h, [])
+    bins.get(h).push(p)
+  }
+  const perBin = []
+  for (const [h, px] of bins) {
+    if (h === -1 || px.length < 4) continue
+    const sum = px.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0])
+    perBin.push({ c: sum.map((v) => v / px.length), pct: Math.round((px.length / n) * 1000) / 10 })
+  }
+  return perBin
     .filter((a) => a.pct >= 0.2)
-    // descarta los que igual quedaron cerca de un color dominante
-    .filter((a) =>
-      centroids.every((c) => {
-        const dr = a.c[0] - c[0]
-        const dg = a.c[1] - c[1]
-        const db = a.c[2] - c[2]
-        return dr * dr + dg * dg + db * db > 45 * 45
-      })
-    )
+    .map((a) => ({ ...a, hex: toHex(a.c) }))
+    // descarta los que igual quedaron cerca de un color dominante (mismo
+    // criterio consciente de matiz que arriba)
+    .filter((a) => centroids.every((c) => !isCloseColor(a.c, c, 45)))
     .sort((x, y) => y.pct - x.pct)
 }
 
@@ -227,7 +275,7 @@ export function measureImage(dataUrl) {
       // apenas se filtraba uno perdían su lugar contra el más grande en área.
       const accents = []
       for (const a of [...smallClusters, ...detectAccents(pixels, centroids)].sort((x, y) => y.pct - x.pct)) {
-        if (accents.every((b) => dist2(a.c, b.c) > 24 * 24)) accents.push(a)
+        if (accents.every((b) => !isCloseColor(a.c, b.c, 24))) accents.push(a)
         if (accents.length >= 6) break
       }
       resolve({
