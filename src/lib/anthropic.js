@@ -230,6 +230,8 @@ Decide what the image physically IS at the rendering level. Pick the single best
 - simplified / stylized forms, painted atmosphere rather than optically-captured haze
 Any caption or object inventory you may receive describes literal CONTENT and is phrased as if the scene were photographed — it is NOT evidence about the medium. Judge the medium ONLY from rendering qualities in the pixels.
 
+⚠ ANTI-BIAS RULE #2 — DO NOT DEFAULT TO "3D RENDER" FOR PAINTERLY / DREAMY / AI-ILLUSTRATION IMAGES. If the image shows heavy uniform noise/grain on TOP of soft blended forms, NO visible polygons or hard silhouettes, backlit color halos (rainbow gradients, aurora glows) with no physical light source, and blurred painted atmosphere with no photographic lens signature — it is a DIGITAL PAINTING / AI ILLUSTRATION / DREAMY MIXED-MEDIA, NEVER a 3D render (game engines cannot produce that grain-over-painting combination). Judge "3D" ONLY when the image shows readable 3D perspective depth AND either faceted geometry OR CGI-clean subsurface/specular shading. Softness alone is NOT evidence of 3D.
+
 PRIMARY DIRECTIVE — STYLISTIC HEGEMONY (THE STYLE IS THE LAW):
 After Step 0, silently lock:
 1. VISUAL MEDIUM — the exact medium from Step 0. Be specific ("stylized low-poly 3D game render", not "digital art"). This is the governing law.
@@ -334,7 +336,13 @@ export async function refineFromComparison({ settings: rawSettings, original, ge
 PHOTOCOPIER MODE: you receive TWO images. The FIRST is the ORIGINAL reference — the absolute target. The SECOND is an AI GENERATION produced from the CURRENT PROMPT. You are the error-correction system of a photocopier: you do not judge beauty, you measure drift and correct it.
 1. Silently diff the generation against the original: what did it LOSE (elements, texture, light behavior), what did it ADD that isn't in the original, what did it EXAGGERATE or UNDERSHOOT (contrast, saturation, mood intensity, scale)?
 2. If OBJECTIVE COMPARISON DATA is provided, treat it as measured fact and compensate explicitly (e.g. generation more saturated than original → lower the saturation wording).
-3. Output the CORRECTED full prompt in the exact same section format — nothing else. Strengthen constraints where the generation drifted, add what it lost, remove or soften what it over-produced. Never describe the generation; describe what the NEXT generation must do to match the ORIGINAL.`
+3. Output the CORRECTED full prompt in the exact same section format — nothing else. Strengthen constraints where the generation drifted, add what it lost, remove or soften what it over-produced. Never describe the generation; describe what the NEXT generation must do to match the ORIGINAL.
+
+⚠ ANTI-CONTAMINATION LAW (critical — generators hallucinate props, text, logos, extra creatures, watermarks):
+Any element, text, letter, digit, symbol, object, character, background prop or lighting effect that appears in the GENERATION but is NOT visible in the ORIGINAL is a HALLUCINATION. You MUST:
+(a) NEVER mention it in # Subject, # Composition, # Environment, # Color, # Lighting, # Style or # Mood.
+(b) ADD it explicitly by name to # Negative (e.g. if the generation invented a floating "0", write "no numerals, no floating digits, no glyphs of any kind" in # Negative; if it invented a bird when the original showed a seal, write "no birds, no additional creatures").
+Ask yourself for every noun in the current prompt: "did I see this in the FIRST image?" If no, delete it from the positive sections and negate it. The prompt must describe the ORIGINAL — never carry generation artifacts forward. Contamination compounds: a hallucination adopted once locks in for every future iteration.`
   const user = `CURRENT PROMPT (the one that produced the second image):\n${draftText}${comparisonData ? `\n\n${comparisonData}` : ''}\n\nFirst image = ORIGINAL reference (target). Second image = generation to correct. Output the corrected prompt.`
   // Usa la versión chica del base64 (512max, 0.75) para ahorrar tokens; si
   // el caller no la calculó (ej. imagen del historial), cae al base64 normal.

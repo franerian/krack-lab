@@ -388,9 +388,12 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   }
 
   const currentTarget = TARGETS.find((t) => t.id === target) || TARGETS[0]
+  // En réplica, el AR del prompt DEBE ser el del original medido — nunca el
+  // exportAr persistido, que arrastra 16:9 y falsea la composición.
+  const effectiveAr = (mode === 'replica' && metrics?.aspectNearest) || ar
 
   const copyCompiled = () => {
-    const compiled = currentTarget.compile(result, { ar })
+    const compiled = currentTarget.compile(result, { ar: effectiveAr })
     if (!compiled) return toast('No hay nada para copiar', 'error')
     navigator.clipboard.writeText(compiled)
     toast(`ADN copiado en formato ${currentTarget.label}`, 'ok')
@@ -403,7 +406,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   const polishAndCopy = async () => {
     if (polishing) return
     if (!isReady(settings)) return toast(providerHint(settings), 'error')
-    const compiled = currentTarget.compile(result, { ar })
+    const compiled = currentTarget.compile(result, { ar: effectiveAr })
     if (!compiled) return toast('No hay nada para pulir', 'error')
     setPolishing(true)
     try {
@@ -770,8 +773,17 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                 {TARGETS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
               </select>
               {currentTarget.usesAr && (
-                <select className="target-select" value={ar} onChange={(e) => setAr(e.target.value)}>
+                <select
+                  className="target-select"
+                  value={effectiveAr}
+                  onChange={(e) => setAr(e.target.value)}
+                  disabled={mode === 'replica' && !!metrics?.aspectNearest}
+                  title={mode === 'replica' && metrics?.aspectNearest ? `Fijado al AR del original (${metrics.aspectNearest})` : 'Aspect ratio del prompt'}
+                >
                   {EXPORT_ASPECT_RATIOS.map((r) => <option key={r}>{r}</option>)}
+                  {mode === 'replica' && metrics?.aspectNearest && !EXPORT_ASPECT_RATIOS.includes(metrics.aspectNearest) && (
+                    <option value={metrics.aspectNearest}>{metrics.aspectNearest}</option>
+                  )}
                 </select>
               )}
               <button className="btn" onClick={copyCompiled}><Copy className="ico" />Copiar</button>
