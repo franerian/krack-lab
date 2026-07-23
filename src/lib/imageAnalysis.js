@@ -238,12 +238,15 @@ export function measureImage(dataUrl) {
       const { data } = ctx.getImageData(0, 0, SIZE, SIZE)
 
       const pixels = []
+      // Luminancia por píxel para el paso Sobel (calculada acá una sola vez).
+      const lumMap = new Float32Array(SIZE * SIZE)
       let lumSum = 0, lumSqSum = 0, satSum = 0
       const n = SIZE * SIZE
-      for (let i = 0; i < data.length; i += 4) {
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
         const r = data[i], g = data[i + 1], b = data[i + 2]
         pixels.push([r, g, b])
         const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        lumMap[p] = lum
         lumSum += lum
         lumSqSum += lum * lum
         const mx = Math.max(r, g, b), mn = Math.min(r, g, b)
@@ -252,6 +255,49 @@ export function measureImage(dataUrl) {
       const lumMean = lumSum / n
       const lumStd = Math.sqrt(Math.max(0, lumSqSum / n - lumMean * lumMean))
       const satMean = satSum / n
+
+      // Densidad de bordes DUROS (estructura, no grano). Sobel puro cuenta
+      // cada píxel de grano como borde: la foca dreamy con grano heavy sale
+      // 63% "edges" mientras el gato cel-shaded sale 31% — al revés de lo
+      // intuitivo. Aplicamos dos pasadas de box blur 3x3 (≈ Gaussian 5x5)
+      // antes del Sobel: el grano de alta frecuencia se promedia y
+      // desaparece, los bordes de bloques planos (que persisten a lo largo
+      // de varios píxeles) sobreviven. Después Sobel sobre la versión suave.
+      const boxBlur = (src) => {
+        const out = new Float32Array(SIZE * SIZE)
+        for (let y = 1; y < SIZE - 1; y++) {
+          for (let x = 1; x < SIZE - 1; x++) {
+            let sum = 0
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                sum += src[(y + dy) * SIZE + (x + dx)]
+              }
+            }
+            out[y * SIZE + x] = sum / 9
+          }
+        }
+        return out
+      }
+      const blurred = boxBlur(boxBlur(lumMap))
+      const EDGE_THRESHOLD = 60
+      let edgePixels = 0
+      const inner = (SIZE - 4) * (SIZE - 4)
+      for (let y = 2; y < SIZE - 2; y++) {
+        for (let x = 2; x < SIZE - 2; x++) {
+          const tl = blurred[(y - 1) * SIZE + (x - 1)]
+          const t = blurred[(y - 1) * SIZE + x]
+          const tr = blurred[(y - 1) * SIZE + (x + 1)]
+          const l = blurred[y * SIZE + (x - 1)]
+          const r2 = blurred[y * SIZE + (x + 1)]
+          const bl = blurred[(y + 1) * SIZE + (x - 1)]
+          const b2 = blurred[(y + 1) * SIZE + x]
+          const br = blurred[(y + 1) * SIZE + (x + 1)]
+          const gx = (tr + 2 * r2 + br) - (tl + 2 * l + bl)
+          const gy = (bl + 2 * b2 + br) - (tl + 2 * t + tr)
+          if (Math.abs(gx) + Math.abs(gy) > EDGE_THRESHOLD) edgePixels++
+        }
+      }
+      const edgeDensity = edgePixels / inner // 0-1
 
       // Escalas calibradas 1-10 (idea 5): derivadas de mediciones, no del ojo.
       const contrast10 = Math.max(1, Math.min(10, Math.round(lumStd / 8)))
@@ -286,6 +332,7 @@ export function measureImage(dataUrl) {
         saturation10,
         brightness10,
         key,
+        edgeDensity: Math.round(edgeDensity * 10000) / 10000, // 0-1, 4 decimales
         width: w,
         height: h,
         aspect: arW <= 50 && arH <= 50 ? `${arW}:${arH}` : nearest[0],
@@ -423,6 +470,7 @@ export function aggregateMetrics(list) {
   if (n === 1) return list[0]
   const avg = (k) => Math.round(list.reduce((s, m) => s + (m[k] || 0), 0) / n)
   const brightness10 = avg('brightness10')
+  const edgeDensity = list.reduce((s, m) => s + (m.edgeDensity || 0), 0) / n
   const aspects = [...new Set(list.map((m) => m.aspect))]
   return {
     count: n,
@@ -432,6 +480,7 @@ export function aggregateMetrics(list) {
     saturation10: avg('saturation10'),
     brightness10,
     key: brightness10 >= 7 ? 'high-key' : brightness10 <= 3 ? 'low-key' : 'balanced',
+    edgeDensity: Math.round(edgeDensity * 10000) / 10000,
     aspect: aspects.length === 1 ? aspects[0] : 'mixto',
     ranges: {
       contrast: [Math.min(...list.map((m) => m.contrast10)), Math.max(...list.map((m) => m.contrast10))],

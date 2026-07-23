@@ -121,7 +121,44 @@ export function objectionsForGrain(styleSection, metrics) {
   return []
 }
 
-// Chequeo 3 — Elements: si un bbox extraído tiene paleta local casi idéntica
+// Chequeo 3 — Edges: si el prompt afirma "no crisp edges anywhere / soft
+// edges / no hard edges / heavy diffusion" pero el Sobel mide alta densidad
+// de bordes duros, el modelo confundió el medio (verificado: caso gato
+// camuflado con bloques planos cel-shaded + grano overlay que fue leído
+// como "soft-focus mixed media, no crisp edges anywhere"). Chequeo simétrico
+// también: si dice "crisp linework everywhere" pero la imagen no tiene
+// bordes duros, es la contradicción opuesta.
+// Umbrales calibrados en browser con imágenes sintéticas reproduciendo los
+// casos reales (post box-blur 2×3 aplicado antes del Sobel para descartar
+// grano): imagen suave/pintura ~0.04-0.10, foca dreamy con grano ~0.10,
+// foto normal con detalles ~0.13, cel-shaded/gato con bloques ~0.23-0.27.
+// > 0.15 = alta densidad de bordes duros; < 0.02 = imagen efectivamente suave.
+const SOFT_EDGE_CLAIMS = /\b(no\s+(crisp|hard|sharp)\s+(edges?|linework|contours?)|no\s+(sharp|hard)\s+focus|no\s+sharp\s+optical|heavy\s+diffusion|soft\s+edges?\s+everywhere|entirely\s+(soft|blurred|diffuse)|diffuse\s+edges\s+everywhere|zero\s+sharp)\b/i
+const CRISP_EDGE_CLAIMS = /\b(crisp\s+linework|hard\s+(edges?|outlines?|silhouettes?|contours?)\s+everywhere|sharp\s+(cel\s+)?outlines?\s+everywhere)\b/i
+export function objectionsForEdges(styleSection, cameraSection, metrics) {
+  if (!metrics || typeof metrics.edgeDensity !== 'number') return []
+  const style = styleSection?.text || styleSection || ''
+  const camera = cameraSection?.text || cameraSection || ''
+  const combined = `${style} ${camera}`
+  const objections = []
+  if (SOFT_EDGE_CLAIMS.test(combined) && metrics.edgeDensity > 0.15) {
+    objections.push({
+      section: SOFT_EDGE_CLAIMS.test(style) ? 'Style' : 'Camera',
+      issue: `The prompt claims "no crisp edges / heavy diffusion" but the image has HIGH measured edge density (${(metrics.edgeDensity * 100).toFixed(1)}% of pixels are hard edges) — profile of a flat-shaded/cel/vector illustration OR a photo with sharp forms, NOT of a soft-focus dreamy image`,
+      hint: 'Look again at the actual shapes. If the subject has defined outlines, flat color blocks or crisp silhouettes, revise the medium (e.g. "flat-color vector illustration with grain overlay", "cel-shaded illustration") and remove the "no crisp edges" claim from # Negative. Grain on top of hard-edged shapes ≠ soft/diffuse.',
+    })
+  }
+  if (CRISP_EDGE_CLAIMS.test(combined) && metrics.edgeDensity < 0.02) {
+    objections.push({
+      section: CRISP_EDGE_CLAIMS.test(style) ? 'Style' : 'Camera',
+      issue: `The prompt claims "crisp linework / hard edges everywhere" but the image has VERY LOW measured edge density (${(metrics.edgeDensity * 100).toFixed(1)}%) — profile of a soft/painterly/blurred image, NOT of a sharp illustration`,
+      hint: 'Look again. If forms are blended, blurred or painterly, remove the "crisp edges" claim and describe the actual softness.',
+    })
+  }
+  return objections
+}
+
+// Chequeo 4 — Elements: si un bbox extraído tiene paleta local casi idéntica
 // al color dominante del fondo (medida via paletteForRegion), probablemente
 // es "atmósfera" (halo, gradiente) confundida con "objeto discreto".
 // Requiere image + paletteForRegion, así que es async y opcional.
@@ -158,6 +195,7 @@ export async function verifyAgainstMeasurements({ sections, elements, metrics, i
   const objections = [
     ...objectionsForColor(bySection.Color, metrics),
     ...objectionsForGrain(bySection.Style, metrics),
+    ...objectionsForEdges(bySection.Style, bySection.Camera, metrics),
     ...(await objectionsForElements(elements, metrics, image, paletteForRegionFn)),
   ]
   return objections
