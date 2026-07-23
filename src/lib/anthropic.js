@@ -412,7 +412,7 @@ const requireParsed = (parsed, trace) => {
   if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
 }
 
-export async function analyzeImageStyle({ settings: rawSettings, image, images, mode = 'style', measurements = '', hint = '' }) {
+export async function analyzeImageStyle({ settings: rawSettings, image, images, mode = 'style', measurements = '', hint = '', verify = null }) {
   const settings = dnaVisionSettings(rawSettings)
   const { imgs, multi } = resolveImages(image, images)
   const base = multi
@@ -446,6 +446,25 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
     .filter((e) => Array.isArray(e.bbox) && e.bbox.length === 4 && e.desc)
     .map((e) => ({ desc: e.desc, bbox: e.bbox.map((v) => Math.max(0, Math.min(1000, Math.round(v)))) }))
     .filter((e) => e.bbox[2] > e.bbox[0] && e.bbox[3] > e.bbox[1])
+  // Prototipo REVERSE-inspirado (opt-in vía verify={metrics, paletteForRegionFn}):
+  // cotejamos declaraciones del prompt contra mediciones objetivas y hacemos
+  // una llamada mini por sección objectada. Sin flag = comportamiento intacto.
+  if (verify?.metrics && imgs.length === 1) {
+    const { verifyAgainstMeasurements, resampleLowConfidence } = await import('./reverseVerify.js')
+    const objections = await verifyAgainstMeasurements({
+      sections, elements, metrics: verify.metrics,
+      image: imgs[0], paletteForRegionFn: verify.paletteForRegionFn,
+    })
+    if (objections.length) {
+      const out = await resampleLowConfidence({
+        rawSettings, image: imgs[0], sections, elements, objections,
+      })
+      trace.objections = objections
+      trace.resampled = out.resampled
+      return { sections: out.sections, elements: out.elements, trace }
+    }
+    trace.objections = []
+  }
   return { sections, elements, trace }
 }
 
