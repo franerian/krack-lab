@@ -99,7 +99,18 @@ export default function ExportModal({ sections, target, setTarget, ar, setAr, on
             )}
             <pre className="export-pre">{visible || '— el prompt está vacío —'}</pre>
             {genImg && (
-              <ImageResult src={genImg} onRemove={() => setGenImg(null)} name={`krack-${current.id}`} />
+              <ImageResult
+                src={genImg}
+                onRemove={() => setGenImg(null)}
+                name={`krack-${current.id}`}
+                bookmarkMeta={{
+                  prompt: visible,
+                  provider: imageProvider,
+                  target: current.id,
+                  aspectRatio: current.usesAr ? ar : '',
+                  meta: { source: 'export', polished: !!polished },
+                }}
+              />
             )}
           </div>
         </div>

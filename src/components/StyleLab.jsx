@@ -667,6 +667,13 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                     src={genImg.dataUrl}
                     onRemove={() => { setGenImg(null); setClipScore(null) }}
                     name={`krack-gen-v${version}`}
+                    bookmarkMeta={{
+                      prompt: result ? TARGETS.find((t) => t.id === 'flux').compile(result) : '',
+                      provider: imageProvider,
+                      target: 'flux',
+                      aspectRatio: metrics?.aspectNearest || '',
+                      meta: { source: 'style-lab', version, clipScore: clipScore ?? null },
+                    }}
                   />
                 ) : (
                   <div

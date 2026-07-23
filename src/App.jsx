@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Undo2, Redo2, Trash2, Folder, Save, X, Dna, UserRound, Copy, Send, Sun, Moon, Settings, Sparkles, SlidersHorizontal } from 'lucide-react'
+import { Undo2, Redo2, Trash2, Folder, Save, X, Dna, UserRound, Copy, Send, Sun, Moon, Settings, Sparkles, SlidersHorizontal, Images } from 'lucide-react'
 import Editor from './components/Editor.jsx'
 import PresetSidebar from './components/PresetSidebar.jsx'
 import CharacterStudio from './components/CharacterStudio.jsx'
@@ -7,6 +7,7 @@ import StoryboardView from './components/StoryboardView.jsx'
 import SettingsModal from './components/SettingsModal.jsx'
 import ExportModal from './components/ExportModal.jsx'
 import StyleLab from './components/StyleLab.jsx'
+import GalleryModal from './components/GalleryModal.jsx'
 import ComposeBar from './components/ComposeBar.jsx'
 import { PRESET_GROUPS } from './data/presets.js'
 
@@ -44,6 +45,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showStyleLab, setShowStyleLab] = useState(false)
+  const [showGallery, setShowGallery] = useState(false)
 
   const [editMenu, setEditMenu] = useState(false)
   const [promptsMenu, setPromptsMenu] = useState(false)
@@ -387,6 +389,7 @@ export default function App() {
         </div>
         <button className="btn" onClick={() => setShowStyleLab(true)} title="Extraer el ADN visual de una imagen"><Dna className="ico" />Style DNA</button>
         <button className="btn" onClick={() => setShowCS(true)}><UserRound className="ico" />Character Studio</button>
+        <button className="btn" onClick={() => setShowGallery(true)} title="Ver generaciones guardadas en este navegador"><Images className="ico" />Galería</button>
         <button className="btn" onClick={copyPrompt} title="Copiar limpio, sin encabezados (otros formatos en Exportar)"><Copy className="ico" />Copiar</button>
         <button className="btn primary" onClick={() => setShowExport(true)} title="Compilar para Midjourney, Sora, Kling, SDXL…"><Send className="ico" />Exportar</button>
         <button
@@ -485,6 +488,12 @@ export default function App() {
           settings={settings}
           imageProvider={imageProvider}
           setImageProvider={setImageProvider}
+        />
+      )}
+      {showGallery && (
+        <GalleryModal
+          onClose={() => setShowGallery(false)}
+          toast={toast}
         />
       )}
       {showSettings && (
