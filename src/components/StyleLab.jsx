@@ -41,6 +41,13 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
   // "opciones avanzadas" para desactivar si querés más velocidad.
   const [verify, setVerify] = useState(true)
   const [deep, setDeep] = useState(true)
+  // Verificación objetiva (beta): cotejo automático de las declaraciones del
+  // prompt contra las mediciones de measureImage (color declarado vs hexes
+  // reales, grano declarado vs saturación/contraste). Si detecta discrepancia,
+  // re-muestrea SOLO ese campo con la imagen delante — mucho más barato que
+  // critiqueStyleDNA (2600 tokens contra 10 secciones enteras). Convive con
+  // la autocrítica para poder comparar. OFF por default hasta validar en vivo.
+  const [objVerify, setObjVerify] = useState(false)
   const [advanced, setAdvanced] = useState(false)
   const [deepStatus, setDeepStatus] = useState('')
   const [grounding, setGrounding] = useState(null)
@@ -153,8 +160,26 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
       }
       const passes = []
       setPass(1)
-      let r = await analyzeImageStyle({ settings, images: imgPayload, mode, measurements })
+      // Verificación objetiva opt-in: al pasar `verify: {metrics, paletteForRegionFn}`
+      // analyzeImageStyle activa el pipeline REVERSE-inspirado (cotejo contra
+      // mediciones + re-muestreo focalizado por campo dudoso).
+      // Solo aplica con UNA sola imagen (el verificador cotejea mediciones de
+      // esa imagen específica — con moodboard no tendría sentido).
+      const objVerifyPayload = objVerify && metrics && images.length === 1
+        ? { metrics, paletteForRegionFn: paletteForRegion }
+        : null
+      let r = await analyzeImageStyle({ settings, images: imgPayload, mode, measurements, verify: objVerifyPayload })
       passes.push(r.trace)
+      if (r.trace?.objections?.length) {
+        const dropped = (r.trace.resampled || []).filter((x) => x.dropped)
+        const fixed = (r.trace.resampled || []).filter((x) => x.after)
+        const msg = [
+          `${r.trace.objections.length} campo(s) no coincidían con las mediciones`,
+          fixed.length && `${fixed.length} corregido(s) con re-muestreo`,
+          dropped.length && `${dropped.length} elemento(s) descartado(s)`,
+        ].filter(Boolean).join(' · ')
+        toast(`Verificación objetiva: ${msg}`, 'ok')
+      }
       let sections = r.sections
       // Zonas del layout: bbox → cajas editables sobre el canvas, con la
       // paleta local medida de cada recorte.
@@ -605,6 +630,12 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
                   <input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} />
                   <span>
                     Análisis profundo <span className="opt-desc">— Florence-2 local (~230 MB la 1ª vez, cacheado después)</span>
+                  </span>
+                </label>
+                <label className="verify-toggle" title="Verificador SIN IA que cotejea el prompt contra las mediciones reales (color declarado vs hexes medidos, grano declarado vs saturación/contraste). Si detecta discrepancia, re-muestrea SOLO ese campo con la imagen delante. Sólo aplica con una imagen.">
+                  <input type="checkbox" checked={objVerify} onChange={(e) => setObjVerify(e.target.checked)} disabled={images.length > 1} />
+                  <span>
+                    Verificación objetiva <span className="opt-desc">— beta · cotejo contra mediciones + re-muestreo focalizado (barato)</span>
                   </span>
                 </label>
               </div>
