@@ -115,7 +115,21 @@ export default function ExportModal({ sections, target, setTarget, ar, setAr, on
           </div>
         </div>
         <div className="modal-foot">
-          <span className="hint">{visible.length} caracteres</span>
+          {(() => {
+            // Midjourney V8.1 tiene un "Prompt Shortener" que recorta
+            // automáticamente al superar el límite (umbral no publicado,
+            // 1024-1300 chars según fuentes de terceros contradictorias).
+            // Objetivo de trabajo: <900. Advertimos antes.
+            const mjOver = current.id === 'midjourney' && visible.length > 900
+            return (
+              <span
+                className={'hint' + (mjOver ? ' warn' : '')}
+                title={mjOver ? `Midjourney V8.1 podría recortar prompts largos (Prompt Shortener). Objetivo: <900 caracteres.` : ''}
+              >
+                {visible.length} caracteres{mjOver ? ' · Midjourney podría recortar' : ''}
+              </span>
+            )
+          })()}
           <div style={{ flex: 1 }} />
           <select
             className="target-select"

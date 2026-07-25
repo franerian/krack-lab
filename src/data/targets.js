@@ -99,7 +99,36 @@ export const TARGETS = [
   {
     id: 'midjourney',
     label: 'Midjourney',
-    notes: 'Según docs de V7: lenguaje natural conciso (no listas de keywords), lo esencial primero porque los primeros tokens pesan más, y parámetros al final separados por espacio: --ar y --no (el Negative se convierte). Tip: agregá --raw a mano si querés menos "opinión" del modelo.',
+    notes: `Midjourney V8.1 (default desde junio 2026) / V8.2 (dropdown Model o --preview; NO existe --v 8.2).
+
+Largo del prompt: la doc oficial no publica un número. Dice: cortos y simples dan mejores resultados, evitar listas largas, menos detalle da más variedad. Existe un Prompt Shortener que recorta automáticamente al superar el límite (umbral no publicado, estimado 1024-1300 chars según fuentes de terceros — contradictorias). Objetivo de trabajo: <900 chars. Óptimo 300-700.
+
+Estructura: frases descriptivas en lenguaje natural, no sopa de keywords (V8.x castiga stacking "8k, masterpiece, detailed").
+Orden por prioridad, lo más importante primero (el peso decae al final):
+1) sujeto principal + rasgos visibles clave
+2) detalles adjuntos al sujeto
+3) acción o primer plano
+4) entorno o fondo
+5) estilo, medio, iluminación, color, mood
+6) cámara y lente
+7) parámetros al final
+Reglas: describir lo que se quiere (nunca lo que no se quiere — para excluir usar --no). Números concretos, no plurales vagos ("three cats", no "cats"). No poner en texto lo que resuelve un parámetro (formato = --ar, no "2.39:1" en el texto). Nada de lenguaje de movimiento en imagen fija. Eliminar sinónimos redundantes del mismo eje (no repetir "cool hues / cool tones / cool palette").
+
+Parámetros disponibles:
+- --ar (usar valores del slider oficial: 4:5, 3:2, 16:9, 21:9; evitar decimales tipo 2.39:1)
+- --raw (o toggle Raw: menos intervención estética del default)
+- --hd (salida 2048px sin upscaler aparte) / --sd (variante más económica)
+- --s N (stylize)
+- --exp (experimental; compite con las referencias)
+- --no (exclusión, compatible con V8.1)
+- --p m<ID> (perfil/moodboard; ID copiado desde la página; compatible V6/V7/V8.1; NO compatible con --sv ni --sw; se pueden encadenar varios)
+- --sref <código|URL> (referencia de estilo; encadenables)
+- --iw N (peso de imagen de referencia; requiere image prompt adjunta — sin imagen se descarta)
+- --oref <img> --ow N (Omni Reference; 1-1000, default 100; 25-50 para cambiar de estilo, 400 para fijar cara/ropa. Doc oficial declara compatibilidad con V7 y agregar un oref corre el prompt en V7 — no hay confirmación oficial de soporte en V8.1; guías de terceros lo listan como V7-only)
+
+NO compatibles con V8.1 según la tabla de versiones: upscalers, --q 2 y --q 4, turbo, multi-prompts.
+
+Moderación: evitar verbos de transformación o daño aplicados a cuerpos humanos ("his body rebuilt as", "body fused with machinery", "limbs replaced") — disparan el filtro por body horror/mutilación. Solución: mover el sujeto en vez de suavizar adjetivos — describir una figura que YA es mecánica y viste ropa humana, en lugar de un humano al que se le reconstruye el cuerpo. Para conservar una persona real usar image prompt o oref y dejar el texto solo para estilo, sin verbos sobre el cuerpo.`,
     usesAr: true,
     compile: (sections, { ar } = {}) => {
       // V7 pesa los primeros tokens: sujeto y MEDIO al frente (el estilo al

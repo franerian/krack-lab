@@ -931,6 +931,7 @@ mark.preset-mark span { background: transparent; }
 .sb-head h2 .ico { width: 18px; height: 18px; color: var(--accent); }
 
 .hint { color: var(--text-faint); font-size: 12px; line-height: 1.5; }
+.hint.warn { color: var(--err); }
 .hint a { color: var(--accent); }
 .hint code { font-family: var(--font-mono); font-size: 11px; background: var(--bg-input); padding: 1px 5px; border-radius: 5px; }
 

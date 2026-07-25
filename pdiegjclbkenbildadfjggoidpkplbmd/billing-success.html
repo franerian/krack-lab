@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PromptCard | Credits added</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg-1: #171312;
+        --bg-2: #39211a;
+        --bg-3: #0d1014;
+        --card: rgba(255,255,255,0.08);
+        --border: rgba(255,255,255,0.12);
+        --text: rgba(250,247,243,0.96);
+        --muted: rgba(239,231,223,0.74);
+        --orange: #ff6f12;
+        --orange-deep: #d94f05;
+        --accent-text: #181513;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        font-family: "SF Pro Display", "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 18% 18%, rgba(255, 111, 18, 0.34), transparent 28%),
+          radial-gradient(circle at 82% 16%, rgba(255, 204, 92, 0.15), transparent 24%),
+          linear-gradient(160deg, var(--bg-1), var(--bg-2) 44%, var(--bg-3));
+      }
+      .shell {
+        width: min(100%, 760px);
+        border-radius: 30px;
+        padding: 34px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.11), rgba(255,255,255,0.03)), rgba(14, 12, 14, 0.42);
+        border: 1px solid var(--border);
+        box-shadow: 0 28px 60px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.18);
+        backdrop-filter: blur(28px) saturate(1.08);
+        -webkit-backdrop-filter: blur(28px) saturate(1.08);
+      }
+      .eyebrow {
+        display: inline-flex;
+        padding: 10px 16px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(255,255,255,0.05);
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 18px 0 12px;
+        font-size: clamp(34px, 5vw, 50px);
+        line-height: 1.03;
+        letter-spacing: -0.04em;
+      }
+      p {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 14px;
+        margin-top: 28px;
+      }
+      .tile {
+        padding: 18px;
+        border-radius: 22px;
+        background: var(--card);
+        border: 1px solid var(--border);
+      }
+      .tile strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      .tile span {
+        font-size: 19px;
+        font-weight: 700;
+        color: var(--text);
+      }
+      .tile span.value-highlight {
+        color: var(--orange);
+      }
+      .hidden { display: none; }
+      .status { margin-top: 24px; font-size: 14px; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <span class="eyebrow">PromptCard credits</span>
+      <h1>Payment received.</h1>
+      <p>Your credits are being added now. Head back to the extension and refresh your account status to see the updated balance.</p>
+
+      <section class="grid">
+        <div class="tile">
+          <strong>Credits</strong>
+          <span id="credits" class="value-highlight">--</span>
+        </div>
+        <div class="tile">
+          <strong>Amount</strong>
+          <span id="amount" class="value-highlight">--</span>
+        </div>
+        <div class="tile">
+          <strong>Status</strong>
+          <span id="status">Verifying</span>
+        </div>
+      </section>
+
+      <p class="status" id="hint">If the balance does not update immediately, give it a few seconds and refresh inside the extension.</p>
+
+    </main>
+
+    <script>
+      const API_BASE = "https://swlpidccgyzvkuvghlac.supabase.co/functions/v1";
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3bHBpZGNjZ3l6dmt1dmdobGFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5NDA3MDgsImV4cCI6MjA5MDUxNjcwOH0.bNiRTN2uVhY6jJsHmyc8-uELVNmRiDRTJE8itbYb9pA";
+      const apiHeaders = {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+      };
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get("token");
+      const orderId = params.get("order_id");
+      const credits = document.getElementById("credits");
+      const amount = document.getElementById("amount");
+      const status = document.getElementById("status");
+      const hint = document.getElementById("hint");
+
+      function setState(order) {
+        credits.textContent = typeof order.creditsToGrant === "number" ? `${order.creditsToGrant}` : "--";
+        if (typeof order.amountRmb === "number") {
+          const currency = order.provider === "stripe" ? "$" : "¥";
+          amount.textContent = `${currency}${order.amountRmb}`;
+        } else {
+          amount.textContent = "--";
+        }
+        status.textContent = order.status === "paid" ? "Paid" : order.status === "pending" ? "Pending" : order.status;
+        if (order.status === "paid") {
+          hint.textContent = "Credits were added successfully. Return to the extension and click Refresh status if needed.";
+        }
+      }
+
+      async function loadOrder() {
+        if (!token && !orderId) {
+          status.textContent = "Missing order";
+          hint.textContent = "This page needs a payment token or order id in the URL.";
+          return;
+        }
+
+        const query = token ? `token=${encodeURIComponent(token)}` : `order_id=${encodeURIComponent(orderId)}`;
+        const response = await fetch(`${API_BASE}/get-credit-order?${query}`, { headers: apiHeaders });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || payload.message || payload.code || "Could not load the payment result.");
+        }
+        setState(payload.order);
+      }
+
+      loadOrder().catch((error) => {
+        status.textContent = "Error";
+        hint.textContent = error instanceof Error ? error.message : String(error);
+      });
+    </script>
+  </body>
+</html>
