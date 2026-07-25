@@ -67,7 +67,10 @@ export const FIREWORKS_MODELS = [
 // Key demo del free tier de Google (sin tarjeta asociada: el peor caso es
 // agotar el cupo diario, nunca un costo). Solución temporal para compartir
 // la app en modo demo; cualquiera puede usar su propia key de AI Studio.
-export const DEMO_GEMINI_KEY = 'AQ.Ab8RN6Koghnv2v_DHaePLntghIwyT8owr0Jx2BA1JE85wUHYAA'
+// Vive en env var de Vercel (VITE_DEMO_GEMINI_KEY) — nunca en el repo, así
+// el bot de Google no la desactiva automáticamente por exposición pública.
+// Si no está seteada, el usuario ve el hint para pegar su propia key.
+export const DEMO_GEMINI_KEY = import.meta.env.VITE_DEMO_GEMINI_KEY || ''
 
 // ── Cancelación y timeouts ──
 // Registro de llamadas en vuelo: "Cancelar" en la UI aborta todas.
@@ -366,6 +369,7 @@ const sanitizeForGemini = (schema) => {
 
 export async function callGemini({ apiKey, model, system, user, maxTokens = 2000, image, images, responseSchema }) {
   const key = apiKey || DEMO_GEMINI_KEY
+  if (!key) throw new Error('Falta la API key de Gemini — pegá la tuya en Ajustes (aistudio.google.com/apikey, gratis).')
   const m = model || 'gemini-2.5-flash'
   const imgs = images || (image ? [image] : null)
   const parts = [
@@ -476,12 +480,16 @@ export function isReady(settings) {
   if (settings.provider === 'ollama') return !!settings.ollamaModel
   if (settings.provider === 'pollinations') return !!settings.pollinationsToken
   if (settings.provider === 'fireworks') return !!settings.fireworksToken
-  return true // gemini: la key demo siempre está disponible
+  // gemini: alcanza con la propia key del usuario O la demo (si el deploy la tiene).
+  return !!(settings.geminiKey || DEMO_GEMINI_KEY)
 }
 
 export function providerHint(settings) {
   if (settings.provider === 'ollama') return 'Elegí un modelo de Ollama en Ajustes'
   if (settings.provider === 'pollinations') return 'Pegá tu key gratuita de enter.pollinations.ai en Ajustes'
   if (settings.provider === 'fireworks') return 'Pegá tu key fw_ de fireworks.ai en Ajustes'
+  if (settings.provider === 'gemini' && !settings.geminiKey && !DEMO_GEMINI_KEY) {
+    return 'Este deploy no tiene key demo — pegá la tuya de aistudio.google.com/apikey (gratis) en Ajustes'
+  }
   return 'El proveedor debería funcionar — revisá Ajustes'
 }

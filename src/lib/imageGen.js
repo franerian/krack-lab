@@ -103,6 +103,7 @@ export const IMAGE_PROVIDERS = [
     label: 'Nano Banana · Gemini (requiere key con billing)',
     async generate({ prompt, aspectRatio, settings }) {
       const key = settings?.geminiKey || DEMO_GEMINI_KEY
+      if (!key) throw new Error('Nano Banana necesita una API key de Gemini con billing habilitado. Pegá la tuya en Ajustes.')
       return withAbort(180_000, async (signal) => {
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(key)}`,

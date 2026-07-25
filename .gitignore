@@ -3,6 +3,13 @@ dist/
 .DS_Store
 *.local
 
+# Env vars locales (NUNCA commitear — secretos, keys). Vercel las lee de
+# su propio panel de Environment Variables. .env.example sí se commitea
+# como plantilla vacía para documentar qué vars existen.
+.env
+.env.*
+!.env.example
+
 # Carpetas de extensiones de Chrome descomprimidas para referencia (IDs
 # alfanuméricos de 32 chars). Se leen puntualmente y nunca deben commitearse.
 pdiegjclbkenbildadfjggoidpkplbmd/
