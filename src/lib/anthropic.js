@@ -668,7 +668,11 @@ export async function polishForTarget({ settings, target, compiled }) {
   })
   const clean = extractFinalPrompt(out)
   if (!clean) throw new Error('respuesta vacía')
-  return { polished: clean, override }
+  // Post-procesado por target — algunos (Midjourney V8.2) tienen bugs de
+  // parser que los LLMs disparan (em-dashes, múltiples --no) y deben
+  // sanitizarse antes de devolver al usuario.
+  const polished = target?.postProcess ? target.postProcess(clean) : clean
+  return { polished, override }
 }
 
 // Layout Builder → prompt: convierte el caption espacial (descripciones del

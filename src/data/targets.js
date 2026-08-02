@@ -59,6 +59,51 @@ const toTags = (text) =>
     .replace(/\s*,\s*/g, ', ')
     .trim()
 
+// Sanitizador para Midjourney V8.2 — dos bugs de compatibilidad reales:
+// (1) V8.2 rechaza "Multiple --no parameters aren't supported". Los em-dashes
+//     (—) y en-dashes (–) que meten los LLMs al pulir se interpretan como --
+//     por el parser de MJ, generando pseudo-parámetros y disparando el error.
+// (2) MJ lee cada palabra del --no INDEPENDIENTEMENTE ("no modern clothing"
+//     = "no modern" + "no clothing"), así que palabras "no"/"No"/"avoid"/
+//     "Avoid" DENTRO de la lista son ruido peor que inútil.
+// Este sanitizador aplica al output final tanto del compile mecánico como
+// del pulido con IA (polishForTarget).
+export function sanitizeMidjourney(text) {
+  if (!text) return text
+  // 1. Reemplazo em/en-dash por coma+espacio en TODO el prompt (evita que
+  //    MJ los lea como -- y dispare "multiple --no"). Se hace GLOBAL porque
+  //    los LLMs también los meten dentro del body positivo.
+  let out = text.replace(/[—–]/g, ', ')
+  // 2. Colapso múltiples --no en uno (V8.2). Capturo cada bloque --no hasta
+  //    el próximo --flag o el fin del prompt, y los uno con coma.
+  const noRe = /--no\s+([\s\S]+?)(?=\s+--[a-z]|\s*$)/gi
+  const noBlocks = [...out.matchAll(noRe)].map((m) => m[1].trim()).filter(Boolean)
+  if (noBlocks.length) {
+    out = out.replace(noRe, '').replace(/\s{2,}/g, ' ').trim()
+    // 3. Limpio cada item del --no: quito prefijos negados, guiones sueltos,
+    //    dedupe case-insensitive, longitud mínima.
+    const seen = new Set()
+    const items = []
+    for (const block of noBlocks) {
+      for (let piece of block.split(',')) {
+        piece = piece.trim()
+          .replace(/^(?:no|not|avoid|absolutely|any)\s+/i, '')
+          .replace(/^[-–—]+\s*/, '')
+          .replace(/[.:;]+$/, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+        if (piece.length < 2) continue
+        const key = piece.toLowerCase()
+        if (seen.has(key)) continue
+        seen.add(key)
+        items.push(piece)
+      }
+    }
+    if (items.length) out = `${out} --no ${items.join(', ')}`
+  }
+  return out.replace(/\s{2,}/g, ' ').trim()
+}
+
 // El pulido del LLM deja el # Negative con ruido típico: "avoid:" inicial,
 // "No " en mayúscula pegado tras una lista minúscula, sub-cláusulas atadas
 // con "and", separadores mezclados (comas + punto y coma), duplicados
@@ -120,7 +165,7 @@ Parámetros disponibles:
 - --hd (salida 2048px sin upscaler aparte) / --sd (variante más económica)
 - --s N (stylize)
 - --exp (experimental; compite con las referencias)
-- --no (exclusión, compatible con V8.1)
+- --no (exclusión). ⚠ V8.2 rechaza MÚLTIPLES --no en el mismo prompt ("Multiple --no parameters aren't supported for --version 8.2"). Usar UN SOLO --no con lista separada por comas. Cada palabra del --no se lee INDEPENDIENTEMENTE — "no modern clothing" = "no modern" + "no clothing"; por eso los items deben ser conceptos limpios sin las palabras "no"/"No"/"avoid"/"Avoid" adentro. Nunca usar em-dash (—) ni en-dash (–) en el prompt: el parser los interpreta como -- y dispara falsos parámetros. Usar guión simple (-) o coma.
 - --p m<ID> (perfil/moodboard; ID copiado desde la página; compatible V6/V7/V8.1; NO compatible con --sv ni --sw; se pueden encadenar varios)
 - --sref <código|URL> (referencia de estilo; encadenables)
 - --iw N (peso de imagen de referencia; requiere image prompt adjunta — sin imagen se descarta)
@@ -139,8 +184,9 @@ Moderación: evitar verbos de transformación o daño aplicados a cuerpos humano
       if (ar) params.push(`--ar ${ar.replace(/\s/g, '')}`)
       const neg = negativeList(sections)
       if (neg) params.push(`--no ${neg}`)
-      return [body, params.join(' ')].filter(Boolean).join(' ')
+      return sanitizeMidjourney([body, params.join(' ')].filter(Boolean).join(' '))
     },
+    postProcess: sanitizeMidjourney,
   },
   {
     id: 'sora',
