@@ -331,7 +331,15 @@ export async function callOllama({ url, model, system, user, maxTokens = 2000, i
             { role: 'system', content: system },
             userMsg,
           ],
-          options: { num_predict: numPredict, temperature: 0.7 },
+          // num_ctx: contexto total (prompt + output). Default de Ollama es
+          // 4096 tokens, insuficiente para prompts largos con imagen — el
+          // refine del DNA Lab llega a ~4700 tokens y rompe con
+          // "exceeds the available context size". 8192 cubre nuestros peores
+          // casos (DNA_SYSTEM + PHOTOCOPIER + draft + comparison + 2 imgs)
+          // sin gastar RAM de más. Los modelos VLM modernos soportan hasta
+          // 32k+ sin problema; el default chico es solo por RAM en modelos
+          // grandes cargados sin cuantizar.
+          options: { num_predict: numPredict, num_ctx: 8192, temperature: 0.7 },
         }),
       })
       if (!res.ok) {
