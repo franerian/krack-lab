@@ -59,29 +59,54 @@ const toTags = (text) =>
     .replace(/\s*,\s*/g, ', ')
     .trim()
 
-// Sanitizador para Midjourney V8.2 — dos bugs de compatibilidad reales:
+// Sanitizador para Midjourney V8.2 — bugs de compatibilidad del parser:
 // (1) V8.2 rechaza "Multiple --no parameters aren't supported". Los em-dashes
 //     (—) y en-dashes (–) que meten los LLMs al pulir se interpretan como --
 //     por el parser de MJ, generando pseudo-parámetros y disparando el error.
 // (2) MJ lee cada palabra del --no INDEPENDIENTEMENTE ("no modern clothing"
 //     = "no modern" + "no clothing"), así que palabras "no"/"No"/"avoid"/
 //     "Avoid" DENTRO de la lista son ruido peor que inútil.
+// (3) MJ interpreta CUALQUIER token que empiece con "-" (guion + número o
+//     letra) como intento de parámetro. Un "-15%" en medio del prompt lee
+//     "-15%" como flag desconocido y arrastra las palabras siguientes como
+//     "Unrecognized parameter(s): -15%, to, center, ..." hasta romperse.
+// (4) Los LLMs meten hex codes (#fce94e), estructuras key:value ("top:"),
+//     punto y coma y porcentajes con signo que MJ no puede parsear.
 // Este sanitizador aplica al output final tanto del compile mecánico como
 // del pulido con IA (polishForTarget).
 export function sanitizeMidjourney(text) {
   if (!text) return text
-  // 1. Reemplazo em/en-dash por coma+espacio en TODO el prompt (evita que
-  //    MJ los lea como -- y dispare "multiple --no"). Se hace GLOBAL porque
-  //    los LLMs también los meten dentro del body positivo.
+  // 1. Reemplazo em/en-dash por coma+espacio en TODO el prompt.
   let out = text.replace(/[—–]/g, ', ')
-  // 2. Colapso múltiples --no en uno (V8.2). Capturo cada bloque --no hasta
+  // 2. Separo body (texto libre) de flags (parámetros MJ válidos). Las
+  //    sanitaciones agresivas de abajo aplican SOLO al body — no quiero
+  //    tocar hex del --sref o números del --iw.
+  const flagRe = /\s(--(?:ar|no|s|hd|sd|raw|exp|p|sref|sw|iw|oref|ow|v|c|weird|q|stylize|chaos|niji)\b)/i
+  const flagMatch = flagRe.exec(out)
+  let body = flagMatch ? out.slice(0, flagMatch.index) : out
+  const flagsPart = flagMatch ? out.slice(flagMatch.index) : ''
+  // 3. Limpieza del body: quitar los patrones que MJ interpreta mal como
+  //    flag o valor. Cada .replace ataca UN patrón concreto verificado.
+  body = body
+    .replace(/#[0-9a-fA-F]{3,8}\b/g, '')      // hex codes → fuera (MJ prefiere nombres)
+    .replace(/(?<!\w)[+\-]\d+(?:\.\d+)?%/g, '') // ±N% con signo → fuera (el "-" dispara flag)
+    .replace(/(\w)\s*:\s+/g, '$1 ')           // "key: value" → "key value"
+    .replace(/;/g, ',')                        // punto y coma → coma
+    .replace(/\s*\(\s*[,\s]*\)/g, '')          // paréntesis vacíos que quedaron
+    .replace(/,\s*,+/g, ',')                   // comas consecutivas
+    .replace(/\s+,/g, ',')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+  out = body + (flagsPart ? ' ' + flagsPart.trim() : '')
+  // 4. Colapso múltiples --no en uno (V8.2). Capturo cada bloque --no hasta
   //    el próximo --flag o el fin del prompt, y los uno con coma.
   const noRe = /--no\s+([\s\S]+?)(?=\s+--[a-z]|\s*$)/gi
   const noBlocks = [...out.matchAll(noRe)].map((m) => m[1].trim()).filter(Boolean)
   if (noBlocks.length) {
     out = out.replace(noRe, '').replace(/\s{2,}/g, ' ').trim()
-    // 3. Limpio cada item del --no: quito prefijos negados, guiones sueltos,
-    //    dedupe case-insensitive, longitud mínima.
+    // 5. Limpio cada item del --no: prefijos negados, guiones sueltos,
+    //    dedupe case-insensitive, longitud mínima. También quito paréntesis
+    //    con hex adentro (residuo del pulido).
     const seen = new Set()
     const items = []
     for (const block of noBlocks) {
@@ -90,6 +115,7 @@ export function sanitizeMidjourney(text) {
           .replace(/^(?:no|not|avoid|absolutely|any)\s+/i, '')
           .replace(/^[-–—]+\s*/, '')
           .replace(/[.:;]+$/, '')
+          .replace(/#[0-9a-fA-F]{3,8}\b/g, '')
           .replace(/\s+/g, ' ')
           .trim()
         if (piece.length < 2) continue
