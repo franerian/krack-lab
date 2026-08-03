@@ -422,8 +422,52 @@ export async function extractFileMetadata(file) {
 }
 
 // Bloque de texto con las mediciones, para inyectar al prompt del extractor.
+// ── Índice de complejidad + presupuesto de palabras adaptativo ──
+// El motivo real: nuestra regla fija "Max 2 short atomic sentences, 130-word
+// prompt" (bien intencionada para prompts inflados) resulta tóxica en
+// imágenes densas — el modelo no OMITE el inventario por incapaz, se lo
+// prohibimos con una regla numérica. Verificado con caso robot cel-shaded
+// (~15 elementos distintos ignorados por el prompt). Solución: derivar la
+// densidad de contenido de las mediciones y escalar el techo.
+
+// complexityIndex 0-1. Combina 3 señales objetivas: densidad de bordes duros
+// (estructura), riqueza de paleta (variedad cromática), y magnitud del
+// contraste (rango tonal usado). Pesos calibrados sobre casos reales:
+// dreamy soft-focus → ~0.15; foto normal → ~0.35; ilustración cel-shaded
+// densa → ~0.75.
+export function complexityIndex(m) {
+  if (!m) return 0.4 // default seguro (tier medium)
+  const edge = Math.max(0, Math.min(1, (m.edgeDensity || 0) / 0.25)) // 0.25 = alto
+  const colorCount = (m.palette?.length || 0) + (m.accents?.length || 0)
+  const paletteRichness = Math.max(0, Math.min(1, colorCount / 12))
+  const contrastNorm = (m.contrast10 || 5) / 10
+  return Math.round((edge * 0.5 + paletteRichness * 0.35 + contrastNorm * 0.15) * 100) / 100
+}
+
+// Mapea el índice a un presupuesto concreto de palabras + oraciones por
+// sección + estricción de inventario. Los rangos numéricos importan más
+// que el nombre del tier — el modelo obedece cifras, no adjetivos.
+export function budgetForComplexity(idx) {
+  if (idx < 0.35) return {
+    tier: 'simple', idx,
+    maxWords: 150, sentPerSection: 2, minSubjectSentences: 1,
+    inventoryStrictness: 'minimal (subject as a whole, no exhaustive listing)',
+  }
+  if (idx < 0.65) return {
+    tier: 'medium', idx,
+    maxWords: 280, sentPerSection: 3, minSubjectSentences: 2,
+    inventoryStrictness: 'itemize the main visible objects with their condition',
+  }
+  return {
+    tier: 'dense', idx,
+    maxWords: 500, sentPerSection: 5, minSubjectSentences: 4,
+    inventoryStrictness: 'EXHAUSTIVE — enumerate every visible object (garments, gear, tools, accessories, cables, markings, insignia, textures on parts) with position and condition. If the image contains 10+ distinct elements, describe all 10+. Brevity is NOT a virtue here.',
+  }
+}
+
 export function measurementsToText(m, meta) {
   if (!m) return ''
+  const b = budgetForComplexity(complexityIndex(m))
   const lines = [
     'MEASURED GROUND TRUTH (computed programmatically from the actual pixels — these are FACTS, your description must obey them):',
     `- Dominant palette (hex, % of frame): ${m.palette.map((c) => `${c.hex} (${c.pct}%)`).join(', ')}`,
@@ -434,6 +478,7 @@ export function measurementsToText(m, meta) {
     `- Contrast: ${m.contrast10}/10 (measured tonal std deviation)`,
     `- Saturation: ${m.saturation10}/10${m.saturation10 <= 3 ? ' (muted/desaturated)' : m.saturation10 >= 7 ? ' (vivid)' : ''}`,
     `- Aspect ratio: ${m.aspect}${m.aspect !== m.aspectNearest ? ` (≈ ${m.aspectNearest})` : ''} — ${m.width}×${m.height}px`,
+    `- CONTENT DENSITY: ${b.tier.toUpperCase()} (complexity index ${b.idx}). TARGET LENGTH: ~${b.maxWords} words total; up to ${b.sentPerSection} sentences per section; # Subject minimum ${b.minSubjectSentences} sentences. Inventory rule: ${b.inventoryStrictness}`,
   ]
   if (meta?.kind === 'exif') {
     lines.push(`- CAMERA EXIF (factual — use as the basis of # Camera): ${meta.text}`)

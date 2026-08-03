@@ -168,7 +168,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
       const objVerifyPayload = objVerify && metrics && images.length === 1
         ? { metrics, paletteForRegionFn: paletteForRegion }
         : null
-      let r = await analyzeImageStyle({ settings, images: imgPayload, mode, measurements, verify: objVerifyPayload })
+      let r = await analyzeImageStyle({ settings, images: imgPayload, mode, measurements, verify: objVerifyPayload, metrics })
       passes.push(r.trace)
       if (r.trace?.objections?.length) {
         const dropped = (r.trace.resampled || []).filter((x) => x.dropped)
@@ -197,7 +197,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
       if (verify) {
         setPass(2)
         setResult(sections) // muestra el borrador mientras verifica
-        r = await critiqueStyleDNA({ settings, images: imgPayload, draft: sections, mode, measurements })
+        r = await critiqueStyleDNA({ settings, images: imgPayload, draft: sections, mode, measurements, metrics })
         passes.push(r.trace)
         sections = r.sections
       }
@@ -396,7 +396,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     const comparisonData = comparisonText()
     try {
       const r = await refineFromComparison({
-        settings, original: primary, generated: genImg, draft: result, mode, comparisonData,
+        settings, original: primary, generated: genImg, draft: result, mode, comparisonData, metrics,
       })
       setResult(r.sections)
       setVersion((v) => v + 1)
@@ -435,7 +435,7 @@ export default function StyleLab({ settings, onApply, onReplace, onSavePreset, o
     if (!compiled) return toast('No hay nada para pulir', 'error')
     setPolishing(true)
     try {
-      const { polished } = await polishForTarget({ settings, target: currentTarget, compiled })
+      const { polished } = await polishForTarget({ settings, target: currentTarget, compiled, metrics })
       navigator.clipboard.writeText(polished)
       toast(`Prompt pulido según las reglas de ${currentTarget.label} y copiado ✓`, 'ok')
     } catch (e) {

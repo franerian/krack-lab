@@ -3,6 +3,7 @@
 // cancelación) vive en llm.js; este archivo re-exporta lo usado por la UI.
 
 import { callLLM, pickDirectModel } from './llm.js'
+import { budgetForComplexity, complexityIndex } from './imageAnalysis.js'
 
 export {
   GEMINI_MODELS, FIREWORKS_MODELS, OLLAMA_DEFAULT_URL, DEMO_GEMINI_KEY,
@@ -292,7 +293,21 @@ const DNA_RULE_ACCENT_COLORS = `MANDATORY — ACCENT COLORS: the # Color section
 When two or more ACCENT hexes differ in hue (not just lightness/saturation — check their actual RGB balance), your names MUST reflect that hue difference explicitly, even when both are heavily muted: e.g. #9e787d and #8385a2 are NOT both "dusty mauve" — the first leans red/rose, the second leans blue-violet; name them "dusty rose-mauve (#9e787d)" and "muted slate-violet (#8385a2)". Collapsing hue-distinct accents into the same vague color family is a critical failure — it erases the image's actual color story.
 SELF-CONSISTENCY CHECK: if any OTHER section (# Composition, # Environment, # Mood) names a hue word — "pink", "green", "blue", "yellow", "violet", etc. — to describe the scene, that SAME hue MUST appear as a named color in # Color, anchored to one of the measured hexes. Never describe a color family in prose and then omit it from # Color — that is a critical failure, the palette is the section generators actually read for color.`
 
-const DNA_RULE_NO_REDUNDANCY = `MANDATORY — NO REDUNDANCY, MAX BREVITY: each section contributes ONLY its own dimension. The framing/POV is stated ONCE, in # Camera — # Subject says WHAT is visible, never how it is framed. Max 2 short atomic sentences per section: a tight 130-word prompt outperforms a 300-word one; repetition dilutes every signal.`
+// Regla de brevedad: fija en "Max 2 short atomic sentences per section /
+// 130 words total" resultó tóxica para imágenes densas — verificado con
+// caso robot cel-shaded donde el modelo ignoró ~15 elementos visibles
+// porque la regla numérica se lo prohibía. Ahora es FUNCIÓN del budget
+// (que viene de complexityIndex + budgetForComplexity en imageAnalysis.js).
+// budget=null => fallback al comportamiento anterior (backwards-compat).
+const DNA_RULE_LENGTH = (budget) => {
+  if (!budget) return `MANDATORY — NO REDUNDANCY, MAX BREVITY: each section contributes ONLY its own dimension. The framing/POV is stated ONCE, in # Camera — # Subject says WHAT is visible, never how it is framed. Max 2 short atomic sentences per section: a tight 130-word prompt outperforms a 300-word one; repetition dilutes every signal.`
+  return `MANDATORY — LENGTH BUDGET (adaptive by content density, NOT a default):
+The MEASURED GROUND TRUTH in the user message includes a CONTENT DENSITY tier and target length. Follow it EXACTLY:
+- If tier=SIMPLE: max 2 short atomic sentences per section; target ~150 words total. Brevity wins here.
+- If tier=MEDIUM: up to 3 sentences per section; target ~280 words. Itemize the main visible objects.
+- If tier=DENSE: up to 5 sentences per section; target ~500 words. INVENTORY IS THE PRODUCT — enumerate every visible element (garments, gear, cables, insignia, markings, textures) with position and condition. UNDER-listing is a critical failure, worse than being verbose.
+Regardless of tier: each section contributes ONLY its own dimension (framing goes in # Camera once, not repeated in # Subject). Redundancy dilutes signal at every length.`
+}
 
 const DNA_RULE_2D_3D_TELL = `3D-vs-2D TELL: if the image shows true 3D perspective depth with faceted/flat-shaded geometry (even with painted-looking fog or textures), it is a STYLIZED 3D GAME RENDER — not a 2D illustration. Reserve "2D illustration / concept art" for images with no coherent 3D geometry.`
 
@@ -337,7 +352,10 @@ avoid: (elements that would break this DNA)`
 
 // El orden de este array ES el orden en que las reglas llegan al modelo —
 // para reordenar prioridad, reordenar acá, no reescribir texto.
-const DNA_SYSTEM = (mode) => [
+// budget (opcional): { tier, maxWords, sentPerSection, ... } de
+// budgetForComplexity() en imageAnalysis.js. Sin budget → comportamiento
+// anterior (regla de brevedad fija).
+const DNA_SYSTEM = (mode, budget = null) => [
   DNA_INTRO,
   DNA_STEP0_MEDIUM,
   DNA_ANTI_BIAS_PHOTO,
@@ -347,7 +365,7 @@ const DNA_SYSTEM = (mode) => [
   DNA_RULE_CAMERA,
   DNA_RULE_LIGHT_SOURCES,
   DNA_RULE_ACCENT_COLORS,
-  DNA_RULE_NO_REDUNDANCY,
+  DNA_RULE_LENGTH(budget),
   DNA_RULE_2D_3D_TELL,
   DNA_RULE_EDGE_FOCUS,
   DNA_RULE_GRAIN_NOISE,
@@ -412,7 +430,7 @@ const requireParsed = (parsed, trace) => {
   if (!parsed.length) { const e = new Error('PARSE_ERROR'); e.trace = trace; throw e }
 }
 
-export async function analyzeImageStyle({ settings: rawSettings, image, images, mode = 'style', measurements = '', hint = '', verify = null }) {
+export async function analyzeImageStyle({ settings: rawSettings, image, images, mode = 'style', measurements = '', hint = '', verify = null, metrics = null }) {
   const settings = dnaVisionSettings(rawSettings)
   const { imgs, multi } = resolveImages(image, images)
   const base = multi
@@ -424,7 +442,11 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
   // también los elementos con bbox. Todos los proveedores tienen Structured
   // Outputs; si el modelo ignora el campo, elements queda vacío sin romper.
   const wantElements = mode === 'replica' && !multi
-  const system = wantElements ? `${DNA_SYSTEM(mode)}\n\n${SPATIAL_MAP_RULE}` : DNA_SYSTEM(mode)
+  // Budget adaptativo por complejidad — con imagen densa (cel-shaded, muchos
+  // elementos), el modelo necesita MÁS palabras y MÁS oraciones por sección
+  // que el default de "brevedad": la regla numérica fija impedía el inventario.
+  const budget = metrics ? budgetForComplexity(complexityIndex(metrics)) : null
+  const system = wantElements ? `${DNA_SYSTEM(mode, budget)}\n\n${SPATIAL_MAP_RULE}` : DNA_SYSTEM(mode, budget)
   const withHint = hint.trim() ? `${base}\n\nUSER GUIDANCE (apply while extracting): ${hint.trim()}` : base
   const user = measurements ? `${withHint}\n\n${measurements}` : withHint
   // "Elements" es la última propiedad del schema JSON (después de las 10
@@ -433,9 +455,12 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
   // presupuesto ANTES de llegar a Elements: el JSON queda truncado/inválido,
   // falla el parseo, y cae al modo texto plano que ni pide ni recupera cajas
   // (verificado: "Fireworks no está creando cajas"). Más margen cuando se
-  // piden Elements.
+  // piden Elements. Y aún más margen cuando el tier es DENSE (500 palabras
+  // de output = ~700 tokens solo del cuerpo, +Elements +overhead JSON).
+  const denseBoost = budget?.tier === 'dense' ? 1200 : 0
+  const baseTokens = wantElements ? 2600 : 1600
   const { raw, parsed, retried, json } = await callParsed(settings, {
-    system, user, maxTokens: wantElements ? 2600 : 1600, images: imgs,
+    system, user, maxTokens: baseTokens + denseBoost, images: imgs,
     schema: sectionsSchema(mode, { withElements: wantElements }),
   })
   const sections = dropBannedSections(mode, parsed)
@@ -473,15 +498,17 @@ export async function analyzeImageStyle({ settings: rawSettings, image, images, 
 // Loop fotocopiadora: compara la generación contra el original y corrige
 // el prompt para que la próxima iteración converja. El original es siempre
 // el objetivo; nunca se persiguen los artefactos de la generación.
-export async function refineFromComparison({ settings: rawSettings, original, generated, draft, mode = 'style', comparisonData = '' }) {
+export async function refineFromComparison({ settings: rawSettings, original, generated, draft, mode = 'style', comparisonData = '', metrics = null }) {
   const settings = dnaVisionSettings(rawSettings)
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
-  const system = `${DNA_SYSTEM(mode)}\n\n${PHOTOCOPIER_MODE_ADDENDUM}`
+  const budget = metrics ? budgetForComplexity(complexityIndex(metrics)) : null
+  const system = `${DNA_SYSTEM(mode, budget)}\n\n${PHOTOCOPIER_MODE_ADDENDUM}`
   const user = `CURRENT PROMPT (the one that produced the second image):\n${draftText}${comparisonData ? `\n\n${comparisonData}` : ''}\n\nFirst image = ORIGINAL reference (target). Second image = generation to correct. Output the corrected prompt.`
   // Usa la versión chica del base64 (512max, 0.75) para ahorrar tokens; si
   // el caller no la calculó (ej. imagen del historial), cae al base64 normal.
   const asLlm = (im) => ({ base64: im.llmBase64 || im.base64, mediaType: im.mediaType })
-  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: [asLlm(original), asLlm(generated)], schema: sectionsSchema(mode) })
+  const denseBoost = budget?.tier === 'dense' ? 1200 : 0
+  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600 + denseBoost, images: [asLlm(original), asLlm(generated)], schema: sectionsSchema(mode) })
   const sections = mergeOverDraft(draft, dropBannedSections(mode, parsed))
   const trace = { pass: 'refine', system, user, raw, retried }
   requireParsed(parsed, trace)
@@ -596,7 +623,18 @@ export async function editLayout({ settings: rawSettings, caption, instruction }
 // destino, siguiendo SUS reglas documentadas (target.notes). El formato que
 // demostró funcionar es el "prompt dorado": medio primero, cada dato dicho
 // una vez, colores nombrados, ~120-160 palabras.
-const POLISH_SYSTEM = (target) => `Output ONLY the final rewritten prompt. NO preamble, NO analysis, NO planning, NO "Let me…", NO word counting, NO markdown fences, NO commentary before OR after — and NONE of that INSIDE the prompt either. Never insert a parenthetical aside auditing your own writing mid-sentence, e.g. "(2 sentences!)", "(wait, let's rephrase)", "(that's too long, splitting it)" — these must NEVER appear anywhere in the output, not even briefly before you "correct" them. If you catch yourself wanting to self-audit sentence count or phrasing, do that silently and output only the final result. If you output anything other than the prompt itself, the response is wrong.
+// Rango de palabras adaptativo por complejidad del contenido de entrada.
+// El "120-160 palabras" fijo era tóxico para prompts densos donde el
+// compilado ya trae 15+ elementos que hay que preservar. Ahora escala con
+// el tier (simple/medium/dense) del budget. Sin budget → fallback anterior.
+const polishLengthRule = (budget) => {
+  if (!budget) return '- 120-160 words unless the platform rules say otherwise.'
+  if (budget.tier === 'simple') return '- 120-160 words. Simple content, no reason to inflate.'
+  if (budget.tier === 'medium') return '- 200-280 words. Preserve every object and condition; itemize the visible elements.'
+  return '- 350-500 words. This is a DENSE prompt with many distinct elements — DO NOT compress it. Preserve every object, marking, cable, insignia, garment detail and their positions. Under-listing is worse than being verbose here.'
+}
+
+const POLISH_SYSTEM = (target, budget = null) => `Output ONLY the final rewritten prompt. NO preamble, NO analysis, NO planning, NO "Let me…", NO word counting, NO markdown fences, NO commentary before OR after — and NONE of that INSIDE the prompt either. Never insert a parenthetical aside auditing your own writing mid-sentence, e.g. "(2 sentences!)", "(wait, let's rephrase)", "(that's too long, splitting it)" — these must NEVER appear anywhere in the output, not even briefly before you "correct" them. If you catch yourself wanting to self-audit sentence count or phrasing, do that silently and output only the final result. If you output anything other than the prompt itself, the response is wrong.
 
 You are a senior prompt engineer writing the FINAL prompt for the platform "${target.label}".
 
@@ -606,7 +644,7 @@ Rewrite the compiled prompt the user gives you as ONE flowing, production-ready 
 - Lead with the visual medium/style if the content defines one.
 - Keep EVERY concrete detail: objects and their condition, each light source with its emitter, colors by NAME (never hex codes), edge/focus behavior, mood.
 - Say each thing exactly ONCE — remove all redundancy.
-- 120-160 words unless the platform rules say otherwise.
+${polishLengthRule(budget)}
 - If the input ends with parameters (--ar, --no …) or a "Negative prompt:" block, keep them verbatim at the end.
 - English.
 
@@ -659,12 +697,13 @@ export const extractFinalPrompt = (raw) => {
   return s.replace(/^```[a-z]*\n?|```$/g, '').trim()
 }
 
-export async function polishForTarget({ settings, target, compiled }) {
+export async function polishForTarget({ settings, target, compiled, metrics = null }) {
   const { settings: s, override } = pickDirectModel(settings)
+  const budget = metrics ? budgetForComplexity(complexityIndex(metrics)) : null
   const out = await callLLM(s, {
-    system: POLISH_SYSTEM(target),
+    system: POLISH_SYSTEM(target, budget),
     user: `COMPILED PROMPT TO POLISH:\n\n${compiled}`,
-    maxTokens: 3000,
+    maxTokens: budget?.tier === 'dense' ? 5000 : 3000,
   })
   const clean = extractFinalPrompt(out)
   if (!clean) throw new Error('respuesta vacía')
@@ -700,13 +739,15 @@ Keep each section to max 2 sentences. No preamble — output only the sections.`
   return { sections: parsed, trace }
 }
 
-export async function critiqueStyleDNA({ settings: rawSettings, image, images, draft, mode = 'style', measurements = '' }) {
+export async function critiqueStyleDNA({ settings: rawSettings, image, images, draft, mode = 'style', measurements = '', metrics = null }) {
   const settings = dnaVisionSettings(rawSettings)
   const { imgs, multi } = resolveImages(image, images)
   const draftText = draft.map((s) => `# ${s.name}\n${s.text}`).join('\n\n')
-  const system = `${DNA_SYSTEM(mode)}\n\n${VERIFICATION_CHECKLIST(multi, imgs.length)}`
+  const budget = metrics ? budgetForComplexity(complexityIndex(metrics)) : null
+  const system = `${DNA_SYSTEM(mode, budget)}\n\n${VERIFICATION_CHECKLIST(multi, imgs.length)}`
   const user = `DRAFT TO VERIFY:\n${draftText}${measurements ? `\n\n${measurements}` : ''}`
-  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600, images: imgs, schema: sectionsSchema(mode) })
+  const denseBoost = budget?.tier === 'dense' ? 1200 : 0
+  const { raw, parsed, retried } = await callParsed(settings, { system, user, maxTokens: 1600 + denseBoost, images: imgs, schema: sectionsSchema(mode) })
   const sections = mergeOverDraft(draft, dropBannedSections(mode, parsed))
   const trace = { pass: 'critique', system, user, raw, retried }
   requireParsed(parsed, trace)
